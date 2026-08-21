@@ -6,10 +6,12 @@ export default function AnalysisLoader({ onComplete }) {
   const [progress, setProgress] = useState(0);
 
   const steps = [
-    { label: "Analyzing alert threat context", sub: "Mapping IoCs, host roles, and execution patterns..." },
-    { label: "Querying security knowledge base vector index", sub: "Searching local incident runbooks and advisories..." },
-    { label: "Retrieving relevant runbook source chunks", sub: "Filtering top matches using embedding cosine similarity..." },
-    { label: "Generating grounded mitigation recommendations", sub: "Synthesizing AI guidance strictly verified by citations..." }
+    { label: "Analyzing alert context...", sub: "Extracting telemetry, target host roles, and event payload..." },
+    { label: "Searching security knowledge base...", sub: "Querying indexed organization playbooks and SOPs..." },
+    { label: "Retrieving relevant documents...", sub: "Gathering matching incident response documentation..." },
+    { label: "Ranking relevant evidence...", sub: "Prioritizing verified runbook sections and references..." },
+    { label: "Generating grounded mitigation guidance...", sub: "Compiling actionable guidance based on retrieved sources..." },
+    { label: "Preparing source citations...", sub: "Linking specific runbook references and evidence items..." }
   ];
 
   useEffect(() => {
@@ -23,20 +25,20 @@ export default function AnalysisLoader({ onComplete }) {
           return prev;
         }
       });
-    }, 1200);
+    }, 850);
 
     // Progress bar smooth loader
     const progressInterval = setInterval(() => {
       setProgress((prev) => {
         if (prev < 100) {
-          const increment = Math.floor(Math.random() * 8) + 2;
+          const increment = Math.floor(Math.random() * 5) + 2;
           return Math.min(prev + increment, 100);
         } else {
           clearInterval(progressInterval);
           return 100;
         }
       });
-    }, 150);
+    }, 110);
 
     return () => {
       clearInterval(stepInterval);
