@@ -93,9 +93,14 @@ export default function Dashboard({ alerts, documents, history }) {
         <div className="space-y-6">
           {/* System Ready indicator panel */}
           <div className="glass-panel p-5 rounded-xl border border-slate-800 space-y-4">
-            <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider pb-3 border-b border-slate-850/80">
-              AlertIQ Activity
-            </h3>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-850/80">
+              <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                Pipeline Health
+              </h3>
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 uppercase tracking-wider">
+                Simulated Status
+              </span>
+            </div>
 
             <div className="space-y-4">
               {/* Ready Indicator */}
