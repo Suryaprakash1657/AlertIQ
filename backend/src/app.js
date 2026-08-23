@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import healthRoutes from "./routes/health.routes.js";
+import llmRoutes from "./routes/llm.routes.js";
 
 const app = express();
 
@@ -11,6 +12,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // API Routes
 app.use("/api/health", healthRoutes);
+app.use("/api/llm", llmRoutes);
 
 // Catch-all 404 handler for undefined routes
 app.use((req, res) => {
