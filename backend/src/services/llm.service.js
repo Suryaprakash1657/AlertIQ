@@ -1,9 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { config } from "../config/env.js";
+import { ALERTIQ_SYSTEM_INSTRUCTION } from "../utils/prompts.js";
 
 /**
- * Generate a completion from Google Gemini API.
- * @param {string} prompt - The prompt to send to Gemini.
+ * Generate a completion from Google Gemini API with system and user prompt separation.
+ * @param {string} prompt - The user prompt to send to Gemini.
  * @returns {Promise<{success: boolean, response: string, model: string}>}
  */
 export const generateCompletion = async (prompt) => {
@@ -19,7 +20,10 @@ export const generateCompletion = async (prompt) => {
 
   const response = await ai.models.generateContent({
     model: config.geminiModel,
-    contents: prompt
+    contents: prompt,
+    config: {
+      systemInstruction: ALERTIQ_SYSTEM_INSTRUCTION
+    }
   });
 
   const content = response.text || "";
@@ -30,3 +34,4 @@ export const generateCompletion = async (prompt) => {
     model: config.geminiModel
   };
 };
+
