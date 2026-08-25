@@ -20,7 +20,9 @@ export const testLlmCompletion = async (req, res) => {
     return res.status(200).json({
       success: true,
       response: result.response,
-      model: result.model
+      model: result.model,
+      usage: result.usage,
+      estimatedCost: result.estimatedCost
     });
   } catch (error) {
     const statusCode = error.statusCode || error.status || 500;
