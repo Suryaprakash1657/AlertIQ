@@ -1,18 +1,20 @@
 import { generateCompletion } from "../services/llm.service.js";
 import { validateMessages } from "../utils/conversation.utils.js";
+import { validateAlert } from "../utils/alert.utils.js";
 
 /**
  * Handle POST /api/llm/test
  * Accepts:
  * {
  *   "prompt": "...",
+ *   "alert": { ... }, // optional structured alert object
  *   "messages": [ { "role": "user"|"model"|"assistant", "content": "..." } ] // optional
  * }
- * Returns LLM completion response with conversation metadata, usage tokens, and estimated cost.
+ * Returns LLM completion response with conversation metadata, alertContextUsed flag, usage tokens, and estimated cost.
  */
 export const testLlmCompletion = async (req, res) => {
   try {
-    const { prompt, messages } = req.body;
+    const { prompt, messages, alert } = req.body;
 
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
       return res.status(400).json({
@@ -24,11 +26,15 @@ export const testLlmCompletion = async (req, res) => {
     // Validate conversation messages if provided
     validateMessages(messages);
 
-    const result = await generateCompletion(prompt.trim(), messages || []);
+    // Validate structured alert object if provided
+    const validatedAlert = validateAlert(alert);
+
+    const result = await generateCompletion(prompt.trim(), messages || [], validatedAlert);
 
     return res.status(200).json({
       success: true,
       response: result.response,
+      alertContextUsed: result.alertContextUsed,
       conversation: result.conversation,
       model: result.model,
       usage: result.usage,
@@ -44,3 +50,4 @@ export const testLlmCompletion = async (req, res) => {
     });
   }
 };
+

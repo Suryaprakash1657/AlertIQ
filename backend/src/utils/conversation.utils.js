@@ -82,13 +82,14 @@ export const trimMessageHistory = (messages = [], limit = config.maxHistoryMessa
 };
 
 /**
- * Formats conversation history messages and current prompt into Gemini structured contents format.
+ * Formats conversation history messages, optional alert context, and current prompt into Gemini structured contents format.
  *
- * @param {Array} historyMessages - Array of sanitized and trimmed history messages.
- * @param {string} currentPrompt - Current user prompt.
+ * @param {Array} [historyMessages=[]] - Array of sanitized and trimmed history messages.
+ * @param {string} [currentPrompt=""] - Current user prompt.
+ * @param {string} [alertContext=""] - Formatted structured alert context string.
  * @returns {Array<{ role: string, parts: Array<{ text: string }> }>}
  */
-export const formatConversationContents = (historyMessages = [], currentPrompt = "") => {
+export const formatConversationContents = (historyMessages = [], currentPrompt = "", alertContext = "") => {
   const formattedHistory = (historyMessages || []).map((msg) => {
     const normalizedRole = msg.role.toLowerCase() === "assistant" ? "model" : msg.role.toLowerCase();
     return {
@@ -97,11 +98,19 @@ export const formatConversationContents = (historyMessages = [], currentPrompt =
     };
   });
 
+  const trimmedAlertContext = typeof alertContext === "string" ? alertContext.trim() : "";
+  const trimmedPrompt = typeof currentPrompt === "string" ? currentPrompt.trim() : "";
+
+  const fullUserTurnText = trimmedAlertContext
+    ? `${trimmedAlertContext}\n\nUser Request / Investigation Query:\n${trimmedPrompt}`
+    : trimmedPrompt;
+
   return [
     ...formattedHistory,
     {
       role: "user",
-      parts: [{ text: currentPrompt.trim() }]
+      parts: [{ text: fullUserTurnText }]
     }
   ];
 };
+
