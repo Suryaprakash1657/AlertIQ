@@ -1,12 +1,18 @@
 import { generateCompletion } from "../services/llm.service.js";
+import { validateMessages } from "../utils/conversation.utils.js";
 
 /**
  * Handle POST /api/llm/test
- * Accepts { "prompt": "..." } and returns LLM completion response.
+ * Accepts:
+ * {
+ *   "prompt": "...",
+ *   "messages": [ { "role": "user"|"model"|"assistant", "content": "..." } ] // optional
+ * }
+ * Returns LLM completion response with conversation metadata, usage tokens, and estimated cost.
  */
 export const testLlmCompletion = async (req, res) => {
   try {
-    const { prompt } = req.body;
+    const { prompt, messages } = req.body;
 
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
       return res.status(400).json({
@@ -15,11 +21,15 @@ export const testLlmCompletion = async (req, res) => {
       });
     }
 
-    const result = await generateCompletion(prompt.trim());
+    // Validate conversation messages if provided
+    validateMessages(messages);
+
+    const result = await generateCompletion(prompt.trim(), messages || []);
 
     return res.status(200).json({
       success: true,
       response: result.response,
+      conversation: result.conversation,
       model: result.model,
       usage: result.usage,
       estimatedCost: result.estimatedCost
