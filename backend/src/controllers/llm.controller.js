@@ -1,4 +1,4 @@
-import { generateCompletion } from "../services/llm.service.js";
+import { generateCompletion, generateAlertAnalysis } from "../services/llm.service.js";
 import { validateMessages } from "../utils/conversation.utils.js";
 import { validateAlert } from "../utils/alert.utils.js";
 
@@ -10,11 +10,11 @@ import { validateAlert } from "../utils/alert.utils.js";
  *   "alert": { ... }, // optional structured alert object
  *   "messages": [ { "role": "user"|"model"|"assistant", "content": "..." } ] // optional
  * }
- * Returns LLM completion response with conversation metadata, alertContextUsed flag, usage tokens, and estimated cost.
+ * Returns free-form LLM completion response with conversation metadata, alertContextUsed flag, usage tokens, and estimated cost.
  */
 export const testLlmCompletion = async (req, res) => {
   try {
-    const { prompt, messages, alert } = req.body;
+    const { prompt, messages, alert } = req.body || {};
 
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
       return res.status(400).json({
@@ -51,3 +51,59 @@ export const testLlmCompletion = async (req, res) => {
   }
 };
 
+/**
+ * Handle POST /api/llm/analyze
+ * Accepts:
+ * {
+ *   "alert": { ... }, // required structured alert object
+ *   "prompt": "...",  // optional additional investigation question
+ *   "messages": [ ... ] // optional prior conversation messages
+ * }
+ * Returns structured security analysis object, conversation metadata, usage tokens, and estimated cost.
+ */
+export const analyzeAlert = async (req, res) => {
+  try {
+    const { alert, prompt, messages } = req.body || {};
+
+    // Alert is strictly required for analysis
+    if (alert === undefined || alert === null) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request: 'alert' is required for structured analysis."
+      });
+    }
+
+    // Validate structured alert
+    const validatedAlert = validateAlert(alert);
+
+    // Validate optional prompt
+    if (prompt !== undefined && prompt !== null && typeof prompt !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request: 'prompt' must be a string if provided."
+      });
+    }
+
+    // Validate optional conversation messages
+    validateMessages(messages);
+
+    const result = await generateAlertAnalysis(validatedAlert, prompt, messages || []);
+
+    return res.status(200).json({
+      success: true,
+      analysis: result.analysis,
+      conversation: result.conversation,
+      model: result.model,
+      usage: result.usage,
+      estimatedCost: result.estimatedCost
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || error.status || 500;
+    const message = error.message || "Failed to generate structured alert analysis.";
+
+    return res.status(statusCode).json({
+      success: false,
+      error: message
+    });
+  }
+};

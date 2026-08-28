@@ -1,6 +1,12 @@
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
-// Load environment variables
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load environment variables from backend/.env or root .env
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 dotenv.config();
 
 // Helper to parse positive integer configuration with safe fallback
@@ -13,6 +19,6 @@ export const config = {
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || "development",
   geminiApiKey: process.env.GEMINI_API_KEY || "",
-  geminiModel: process.env.GEMINI_MODEL || "gemini-3.6-flash",
+  geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
   maxHistoryMessages: parsePositiveInt(process.env.MAX_HISTORY_MESSAGES, 10)
 };
