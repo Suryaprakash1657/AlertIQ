@@ -151,30 +151,45 @@ export const generateCompletion = async (prompt, messages = [], alert = null) =>
   };
 };
 
+import { retrieveKnowledge } from "./retrieval.service.js";
+import { constructRetrievalQueryFromAlert, buildRagContext } from "../utils/rag.utils.js";
+import { sanitizeErrorMessage } from "./embedding.service.js";
+
 /**
- * Generate a structured security analysis for a security alert from Google Gemini API.
+ * Generate a structured security analysis for a security alert from Google Gemini API,
+ * optionally augmented with semantically retrieved knowledge-base runbooks (RAG).
  * Returns a validated and normalized analysis object with summary, risk assessment, key indicators,
- * investigation steps, recommended actions, assumptions, and limitations.
+ * investigation steps, recommended actions, assumptions, limitations, and retrieval metadata.
  * Used by POST /api/llm/analyze.
  *
  * @param {Object} alert - Pre-validated structured alert object.
  * @param {string|null} [prompt=null] - Optional additional investigation question or focus area.
  * @param {Array<{ role: string, content: string }>} [messages=[]] - Optional prior conversation messages.
+ * @param {Object} [options={}] - Optional configuration (enableRag, topK, similarityThreshold).
  * @returns {Promise<{
  *   success: boolean,
  *   analysis: Object,
+ *   retrieval: {
+ *     status: "success"|"failed"|"disabled",
+ *     query?: string,
+ *     topK?: number,
+ *     similarityThreshold?: number,
+ *     matchesFound: number,
+ *     sourcesUsed: Array<Object>,
+ *     error?: string
+ *   },
  *   conversation: { historyMessagesReceived: number, historyMessagesUsed: number, historyTrimmed: boolean },
  *   model: string,
  *   usage: { inputTokens: number, outputTokens: number, totalTokens: number, thoughtsTokens?: number },
  *   estimatedCost: Object
  * }>}
  */
-export const generateAlertAnalysis = async (alert, prompt = null, messages = []) => {
+export const generateAlertAnalysis = async (alert, prompt = null, messages = [], options = {}) => {
   // Determine effective user investigation prompt
   const activePrompt =
     typeof prompt === "string" && prompt.trim() !== ""
       ? prompt.trim()
-      : DEFAULT_ANALYSIS_PROMPT;
+    : DEFAULT_ANALYSIS_PROMPT;
 
   // Manage conversation history and trimming
   const {
@@ -184,11 +199,66 @@ export const generateAlertAnalysis = async (alert, prompt = null, messages = [])
     historyTrimmed
   } = trimMessageHistory(messages, config.maxHistoryMessages);
 
-  // Build formatted security alert context (placed in user turn)
+  // Build formatted security alert context
   const alertContext = buildAlertContext(alert);
 
+  // Handle optional RAG knowledge retrieval
+  const enableRag = options.enableRag !== undefined ? Boolean(options.enableRag) : true;
+  let retrieval = {
+    status: enableRag ? "success" : "disabled",
+    matchesFound: 0,
+    sourcesUsed: []
+  };
+  let ragContextText = "";
+
+  if (enableRag) {
+    const topK = options.topK !== undefined ? options.topK : config.defaultRetrievalTopK || 5;
+    const similarityThreshold =
+      options.similarityThreshold !== undefined
+        ? options.similarityThreshold
+        : config.defaultSimilarityThreshold !== undefined
+        ? config.defaultSimilarityThreshold
+        : 0.6;
+
+    try {
+      const retrievalQuery = constructRetrievalQueryFromAlert(alert);
+      retrieval.query = retrievalQuery;
+      retrieval.topK = topK;
+      retrieval.similarityThreshold = similarityThreshold;
+
+      if (retrievalQuery) {
+        const retrievalResult = await retrieveKnowledge(retrievalQuery, {
+          topK,
+          similarityThreshold
+        });
+
+        retrieval.matchesFound = retrievalResult.matchedCount;
+
+        if (retrievalResult.matchedCount > 0) {
+          const ragBuilt = buildRagContext(retrievalResult.results);
+          ragContextText = ragBuilt.ragContextText;
+          retrieval.sourcesUsed = ragBuilt.sourcesUsed;
+        }
+      }
+    } catch (retrievalErr) {
+      // Graceful degradation on retrieval failure (do not fail analysis; fall back to alert-only context)
+      retrieval = {
+        status: "failed",
+        error: sanitizeErrorMessage(retrievalErr?.message || "Failed to retrieve relevant knowledge."),
+        matchesFound: 0,
+        sourcesUsed: []
+      };
+      ragContextText = "";
+    }
+  }
+
+  // Combine alert context with retrieved RAG context in user turn
+  const combinedContext = ragContextText
+    ? `${alertContext}\n\n${ragContextText}`
+    : alertContext;
+
   // Format conversation contents for Gemini API
-  const contents = formatConversationContents(activeHistory, activePrompt, alertContext);
+  const contents = formatConversationContents(activeHistory, activePrompt, combinedContext);
 
   // Request structured JSON output from Gemini
   const { text, usage, estimatedCost } = await executeGeminiCall({
@@ -206,6 +276,7 @@ export const generateAlertAnalysis = async (alert, prompt = null, messages = [])
   return {
     success: true,
     analysis: validatedAnalysis,
+    retrieval,
     conversation: {
       historyMessagesReceived,
       historyMessagesUsed,
@@ -216,3 +287,4 @@ export const generateAlertAnalysis = async (alert, prompt = null, messages = [])
     estimatedCost
   };
 };
+
