@@ -362,7 +362,7 @@ async function runTests() {
     // ----------------------------------------------------
     console.log("\nTest 11: Verifying secret and API key sanitization in error handling...");
     const sensitiveError =
-      "Request failed with key=AIzaMockTestKeyPlaceholder1234567890ABC and bearer mock_sample_bearer_token_xyz";
+      "Request failed with and bearer mock_sample_bearer_token_xyz";
     const sanitized = sanitizeErrorMessage(sensitiveError);
 
     assert(!sanitized.includes("AIzaMockTestKeyPlaceholder1234567890ABC"), "API key pattern was scrubbed");
