@@ -20,5 +20,8 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || "development",
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+  geminiEmbeddingModel: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-2",
+  embeddingDimensions: 768,
   maxHistoryMessages: parsePositiveInt(process.env.MAX_HISTORY_MESSAGES, 10)
 };
+

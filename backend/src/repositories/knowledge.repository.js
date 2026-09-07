@@ -115,6 +115,43 @@ class KnowledgeRepository {
   }
 
   /**
+   * Retrieves all chunks across all documents that have been successfully embedded (status === "ready").
+   * Provides the vector-ready storage foundation for future semantic search in Module 3.20.
+   *
+   * @returns {Promise<Array<Object>>}
+   */
+  async getAllIndexedChunks() {
+    const indexedChunks = [];
+    for (const chunks of this.chunksByDocId.values()) {
+      for (const chunk of chunks) {
+        if (chunk.embedding && chunk.embedding.status === "ready") {
+          indexedChunks.push(JSON.parse(JSON.stringify(chunk)));
+        }
+      }
+    }
+    return indexedChunks;
+  }
+
+  /**
+   * Retrieves a single chunk by its chunk ID.
+   *
+   * @param {string} chunkId - Unique chunk identifier.
+   * @returns {Promise<Object|null>}
+   */
+  async findChunkById(chunkId) {
+    if (!chunkId || typeof chunkId !== "string") {
+      return null;
+    }
+    for (const chunks of this.chunksByDocId.values()) {
+      const match = chunks.find((c) => c.id === chunkId);
+      if (match) {
+        return JSON.parse(JSON.stringify(match));
+      }
+    }
+    return null;
+  }
+
+  /**
    * Clears all documents and chunks from the in-memory store.
    *
    * @returns {Promise<void>}
@@ -124,6 +161,7 @@ class KnowledgeRepository {
     this.chunksByDocId.clear();
   }
 }
+
 
 // Singleton repository instance
 export const knowledgeRepository = new KnowledgeRepository();

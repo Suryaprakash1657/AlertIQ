@@ -163,7 +163,15 @@ export const createDocumentChunks = (document, options = {}) => {
         ...(document.metadata || {})
       },
       charCount: content.length,
-      tokenEstimate: Math.ceil(content.length / 4)
+      tokenEstimate: Math.ceil(content.length / 4),
+      embedding: {
+        status: "pending",
+        model: null,
+        dimensions: null,
+        vector: null,
+        generatedAt: null
+      }
     };
   });
 };
+
