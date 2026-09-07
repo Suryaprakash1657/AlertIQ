@@ -4,6 +4,7 @@ import crypto from "crypto";
  * Maximum limits for document fields
  */
 export const DOCUMENT_LIMITS = {
+  ID_MAX_LENGTH: 100,
   TITLE_MAX_LENGTH: 255,
   SOURCE_MAX_LENGTH: 255,
   CONTENT_MIN_LENGTH: 1,
@@ -16,6 +17,7 @@ export const DOCUMENT_LIMITS = {
  *
  * @param {any} payload - Incoming request body
  * @returns {{
+ *   id?: string,
  *   title: string,
  *   content: string,
  *   source: string,
@@ -30,6 +32,37 @@ export const validateDocumentPayload = (payload) => {
     const error = new Error("Invalid request payload: Request body must be a valid JSON object.");
     error.statusCode = 400;
     throw error;
+  }
+
+  // 0. Validate optional stable document ID (for corpus ingestion or explicit ID assignment)
+  let validatedId;
+  if (payload.id !== undefined && payload.id !== null) {
+    if (typeof payload.id !== "string") {
+      const error = new Error("Invalid document: 'id' must be a string if provided.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const trimmedId = payload.id.trim();
+    if (trimmedId.length === 0) {
+      const error = new Error("Invalid document: 'id' cannot be an empty string.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (trimmedId.length > DOCUMENT_LIMITS.ID_MAX_LENGTH) {
+      const error = new Error(
+        `Invalid document: 'id' exceeds maximum length of ${DOCUMENT_LIMITS.ID_MAX_LENGTH} characters.`
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!/^[a-zA-Z0-9_.-]+$/.test(trimmedId)) {
+      const error = new Error(
+        "Invalid document: 'id' must contain only alphanumeric characters, underscores, dots, or hyphens."
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+    validatedId = trimmedId;
   }
 
   // 1. Validate required title
@@ -149,6 +182,7 @@ export const validateDocumentPayload = (payload) => {
   }
 
   return {
+    ...(validatedId !== undefined && { id: validatedId }),
     title: trimmedTitle,
     content: trimmedContent,
     source: validatedSource,
@@ -160,13 +194,14 @@ export const validateDocumentPayload = (payload) => {
 
 /**
  * Normalizes a validated payload into a complete Document schema object.
+ * Preserves caller-supplied stable document ID if present, otherwise generates a unique doc_<uuid>.
  *
  * @param {Object} validatedPayload
  * @returns {Object} Document entity
  */
 export const normalizeDocument = (validatedPayload) => {
   const now = new Date().toISOString();
-  const id = `doc_${crypto.randomUUID()}`;
+  const id = validatedPayload.id || `doc_${crypto.randomUUID()}`;
 
   return {
     id,
