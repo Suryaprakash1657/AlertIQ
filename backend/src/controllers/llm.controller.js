@@ -63,7 +63,7 @@ export const testLlmCompletion = async (req, res) => {
  */
 export const analyzeAlert = async (req, res) => {
   try {
-    const { alert, prompt, messages } = req.body || {};
+    const { alert, prompt, messages, enableRag, topK, similarityThreshold } = req.body || {};
 
     // Alert is strictly required for analysis
     if (alert === undefined || alert === null) {
@@ -87,16 +87,24 @@ export const analyzeAlert = async (req, res) => {
     // Validate optional conversation messages
     validateMessages(messages);
 
-    const result = await generateAlertAnalysis(validatedAlert, prompt, messages || []);
+    const ragOptions = {
+      ...(enableRag !== undefined && { enableRag }),
+      ...(topK !== undefined && { topK }),
+      ...(similarityThreshold !== undefined && { similarityThreshold })
+    };
+
+    const result = await generateAlertAnalysis(validatedAlert, prompt, messages || [], ragOptions);
 
     return res.status(200).json({
       success: true,
       analysis: result.analysis,
+      retrieval: result.retrieval,
       conversation: result.conversation,
       model: result.model,
       usage: result.usage,
       estimatedCost: result.estimatedCost
     });
+
   } catch (error) {
     const statusCode = error.statusCode || error.status || 500;
     const message = error.message || "Failed to generate structured alert analysis.";

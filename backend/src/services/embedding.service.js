@@ -159,6 +159,28 @@ export const generateEmbedding = async (text, options = {}) => {
 };
 
 /**
+ * Generates a dense vector embedding for a retrieval search query string.
+ * Uses taskType: "RETRIEVAL_QUERY" to optimize embedding geometry for query-document retrieval.
+ *
+ * @param {string} query - Raw search or investigation query text.
+ * @param {Object} [options={}] - Optional parameters (outputDimensionality, providerOverride, etc.).
+ * @returns {Promise<{
+ *   model: string,
+ *   dimensions: number,
+ *   vector: number[],
+ *   generatedAt: string
+ * }>}
+ */
+export const generateQueryEmbedding = async (query, options = {}) => {
+  return generateEmbedding(query, {
+    ...options,
+    taskType: "RETRIEVAL_QUERY",
+    title: undefined
+  });
+};
+
+
+/**
  * Validates that an embedding result matches the expected dimensions and contains valid numeric floats.
  *
  * @param {Object} result

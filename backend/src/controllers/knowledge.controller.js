@@ -11,6 +11,7 @@ import {
   getKnowledgeDocumentById,
   deleteKnowledgeDocument
 } from "../services/knowledge.service.js";
+import { retrieveKnowledge } from "../services/retrieval.service.js";
 
 /**
  * Handles POST /api/knowledge/documents
@@ -111,3 +112,34 @@ export const deleteDocument = async (req, res) => {
     });
   }
 };
+
+/**
+ * Handles POST /api/knowledge/search
+ * Performs semantic similarity retrieval across indexed knowledge-base chunks.
+ */
+export const searchKnowledge = async (req, res) => {
+  try {
+    const { query, topK, similarityThreshold } = req.body || {};
+    const result = await retrieveKnowledge(query, { topK, similarityThreshold });
+
+    return res.status(200).json({
+      success: true,
+      query: result.query,
+      topK: result.topK,
+      similarityThreshold: result.similarityThreshold,
+      totalIndexedChunks: result.totalIndexedChunks,
+      matchedCount: result.matchedCount,
+      results: result.results
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || error.status || 500;
+    const message = error.message || "Failed to perform knowledge retrieval.";
+
+    return res.status(statusCode).json({
+      success: false,
+      error: message
+    });
+  }
+};
+
+
