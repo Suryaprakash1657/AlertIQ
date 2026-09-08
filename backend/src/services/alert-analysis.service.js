@@ -23,6 +23,7 @@ import {
 import { constructRetrievalQueryFromAlert, buildRagContext } from "../utils/rag.utils.js";
 import { retrieveKnowledge } from "./retrieval.service.js";
 import { knowledgeRepository } from "../repositories/knowledge.repository.js";
+import { alertHistoryRepository } from "../repositories/alert-history.repository.js";
 import { sanitizeErrorMessage } from "./embedding.service.js";
 import { trimMessageHistory, formatConversationContents, validateMessages } from "../utils/conversation.utils.js";
 import { estimateLlmCost } from "./cost.service.js";
@@ -320,6 +321,33 @@ export const analyzeAlertPipeline = async (payload = {}, options = {}) => {
   // 11. Validate and normalize schema
   const validatedAnalysis = validateAndNormalizeAnalysis(parsedJson);
 
+  // 12. Persist alert, analysis, and RAG sources atomically to history database
+  let persistence = { saved: false };
+  try {
+    const saveResult = await alertHistoryRepository.saveAlertAnalysis({
+      alert: validatedAlert,
+      analysis: validatedAnalysis,
+      knowledgeContext,
+      model: config.geminiModel,
+      usage
+    });
+
+    if (saveResult && saveResult.saved) {
+      persistence = {
+        saved: true,
+        analysisId: saveResult.analysisId,
+        alertRecordId: saveResult.alertRecordId
+      };
+    }
+  } catch (persistErr) {
+    // Graceful persistence failure degradation: AI analysis remains successful, sanitized warning logged
+    const sanitizedMsg = sanitizeErrorMessage(persistErr?.message || "Failed to persist alert analysis history.");
+    console.warn(`[Alert Analysis] History persistence warning: ${sanitizedMsg}`);
+    persistence = {
+      saved: false
+    };
+  }
+
   return {
     success: true,
     analysis: validatedAnalysis,
@@ -331,6 +359,7 @@ export const analyzeAlertPipeline = async (payload = {}, options = {}) => {
     },
     model: config.geminiModel,
     usage,
-    estimatedCost
+    estimatedCost,
+    persistence
   };
 };

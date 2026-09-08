@@ -4,6 +4,7 @@ import healthRoutes from "./routes/health.routes.js";
 import llmRoutes from "./routes/llm.routes.js";
 import knowledgeRoutes from "./routes/knowledge.routes.js";
 import alertRoutes from "./routes/alert.routes.js";
+import historyRoutes from "./routes/history.routes.js";
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.use(express.urlencoded({ extended: true }));
 // API Routes
 app.use("/api/health", healthRoutes);
 app.use("/api/alerts", alertRoutes);
+app.use("/api/history", historyRoutes);
 app.use("/api/llm", llmRoutes);
 app.use("/api/knowledge", knowledgeRoutes);
 
