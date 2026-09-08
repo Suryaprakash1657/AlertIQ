@@ -32,7 +32,16 @@ export const config = {
   maxRetrievalTopK: parsePositiveInt(process.env.MAX_RETRIEVAL_TOP_K, 20),
   defaultSimilarityThreshold: parsePositiveFloat(process.env.DEFAULT_SIMILARITY_THRESHOLD, 0.6),
   maxRagContextChars: parsePositiveInt(process.env.MAX_RAG_CONTEXT_CHARS, 10000),
-  maxHistoryMessages: parsePositiveInt(process.env.MAX_HISTORY_MESSAGES, 10)
+  maxHistoryMessages: parsePositiveInt(process.env.MAX_HISTORY_MESSAGES, 10),
+
+  // Database Configuration (PostgreSQL + pgvector)
+  dbHost: process.env.DB_HOST || "localhost",
+  dbPort: parsePositiveInt(process.env.DB_PORT, 5432),
+  dbUser: process.env.DB_USER || "postgres",
+  dbPassword: process.env.DB_PASSWORD || "",
+  dbName: process.env.DB_NAME || "alertiq",
+  dbSsl: process.env.DB_SSL === "true",
+  dbMaxConnections: parsePositiveInt(process.env.DB_MAX_CONNECTIONS, 20),
+  dbIdleTimeoutMillis: parsePositiveInt(process.env.DB_IDLE_TIMEOUT_MS, 30000),
+  dbConnectionTimeoutMillis: parsePositiveInt(process.env.DB_CONN_TIMEOUT_MS, 5000)
 };
-
-
