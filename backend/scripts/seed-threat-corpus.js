@@ -14,6 +14,7 @@
 
 import { ingestThreatCorpus, getThreatCorpusStatus } from "../src/services/threat-corpus.service.js";
 import { config } from "../src/config/env.js";
+import { closePool } from "../src/config/db.js";
 
 const args = process.argv.slice(2);
 const force = args.includes("--force");
@@ -24,35 +25,35 @@ const run = async () => {
   console.log("          AlertIQ Threat Knowledge Corpus CLI                  ");
   console.log("===============================================================");
 
-  if (statusOnly) {
-    console.log("\n[Status] Querying Knowledge Base for threat corpus documents...");
-    const status = await getThreatCorpusStatus();
-    console.log(`\nTotal Corpus Documents: ${status.totalCorpusDocuments}`);
-    console.log(`Indexed in Storage:     ${status.indexedCount}`);
-    console.log(`Missing from Storage:   ${status.missingCount}\n`);
-
-    console.table(
-      status.documents.map((d) => ({
-        ID: d.id,
-        Threat: d.threatType,
-        Authority: d.authority,
-        Indexed: d.isIndexed ? "YES" : "NO",
-        Chunks: d.chunkCount
-      }))
-    );
-    return;
-  }
-
-  console.log(`\nConfiguration:`);
-  console.log(`  Embedding Model: ${config.geminiEmbeddingModel}`);
-  console.log(`  Dimensions:      ${config.embeddingDimensions}`);
-  console.log(`  Force Mode:      ${force ? "ENABLED (rebuilding existing docs)" : "DISABLED (idempotent skip)"}`);
-  console.log(`  API Key Set:     ${Boolean(config.geminiApiKey && config.geminiApiKey !== "your_gemini_api_key_here") ? "YES" : "NO"}`);
-  console.log("---------------------------------------------------------------");
-
-  const startTime = Date.now();
-
   try {
+    if (statusOnly) {
+      console.log("\n[Status] Querying Knowledge Base for threat corpus documents...");
+      const status = await getThreatCorpusStatus();
+      console.log(`\nTotal Corpus Documents: ${status.totalCorpusDocuments}`);
+      console.log(`Indexed in Storage:     ${status.indexedCount}`);
+      console.log(`Missing from Storage:   ${status.missingCount}\n`);
+
+      console.table(
+        status.documents.map((d) => ({
+          ID: d.id,
+          Threat: d.threatType,
+          Authority: d.authority,
+          Indexed: d.isIndexed ? "YES" : "NO",
+          Chunks: d.chunkCount
+        }))
+      );
+      return;
+    }
+
+    console.log(`\nConfiguration:`);
+    console.log(`  Embedding Model: ${config.geminiEmbeddingModel}`);
+    console.log(`  Dimensions:      ${config.embeddingDimensions}`);
+    console.log(`  Force Mode:      ${force ? "ENABLED (rebuilding existing docs)" : "DISABLED (idempotent skip)"}`);
+    console.log(`  API Key Set:     ${Boolean(config.geminiApiKey && config.geminiApiKey !== "your_gemini_api_key_here") ? "YES" : "NO"}`);
+    console.log("---------------------------------------------------------------");
+
+    const startTime = Date.now();
+
     const result = await ingestThreatCorpus({
       force,
       verbose: true
@@ -83,7 +84,9 @@ const run = async () => {
     if (err.statusCode) {
       console.error(`Status Code: ${err.statusCode}`);
     }
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    await closePool();
   }
 };
 
