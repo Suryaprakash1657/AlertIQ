@@ -43,9 +43,13 @@ export const getPool = () => {
 };
 
 /**
- * Singleton pool export
+ * Lazy pool accessor object
  */
-export const pool = getPool();
+export const pool = {
+  query: (text, params) => query(text, params),
+  connect: () => getClient(),
+  end: () => closePool()
+};
 
 /**
  * Executes a parameterized SQL query using the shared connection pool.
@@ -55,10 +59,10 @@ export const pool = getPool();
  * @returns {Promise<pg.QueryResult>}
  */
 export const query = async (text, params = []) => {
-  const pool = getPool();
+  const p = getPool();
   const start = Date.now();
   try {
-    const res = await pool.query(text, params);
+    const res = await p.query(text, params);
     const duration = Date.now() - start;
     if (config.nodeEnv === "development" && duration > 1000) {
       console.warn(`[Database] Slow query (${duration}ms):`, text.substring(0, 100));
@@ -76,8 +80,8 @@ export const query = async (text, params = []) => {
  * @returns {Promise<pg.PoolClient>}
  */
 export const getClient = async () => {
-  const pool = getPool();
-  return await pool.connect();
+  const p = getPool();
+  return await p.connect();
 };
 
 /**

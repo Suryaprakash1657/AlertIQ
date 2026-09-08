@@ -81,7 +81,38 @@ export const retrieveKnowledge = async (query, options = {}) => {
   const queryEmbedding = await generateQueryEmbedding(cleanQuery, options);
   const queryVector = queryEmbedding.vector;
 
-  // 5. Fetch all indexed chunks from repository abstraction
+  // 5. If active repository supports direct database vector search (e.g. pgvector <=>), use it:
+  if (typeof knowledgeRepository.searchSimilarChunks === "function") {
+    const allIndexed = await knowledgeRepository.getAllIndexedChunks();
+    const totalIndexedChunks = Array.isArray(allIndexed) ? allIndexed.length : 0;
+
+    if (totalIndexedChunks === 0) {
+      return {
+        query: cleanQuery,
+        topK: effectiveTopK,
+        similarityThreshold: effectiveThreshold,
+        totalIndexedChunks: 0,
+        matchedCount: 0,
+        results: []
+      };
+    }
+
+    const pgResults = await knowledgeRepository.searchSimilarChunks(queryVector, {
+      topK: effectiveTopK,
+      similarityThreshold: effectiveThreshold
+    });
+
+    return {
+      query: cleanQuery,
+      topK: effectiveTopK,
+      similarityThreshold: effectiveThreshold,
+      totalIndexedChunks,
+      matchedCount: pgResults.length,
+      results: pgResults
+    };
+  }
+
+  // 6. Fallback: In-memory cosine similarity calculation (for InMemoryKnowledgeRepository)
   const allIndexedChunks = await knowledgeRepository.getAllIndexedChunks();
 
   if (!Array.isArray(allIndexedChunks) || allIndexedChunks.length === 0) {
@@ -95,11 +126,9 @@ export const retrieveKnowledge = async (query, options = {}) => {
     };
   }
 
-  // 6. Calculate cosine similarity against all indexed chunk vectors
   const candidates = [];
 
   for (const chunk of allIndexedChunks) {
-    // Only process chunks that have ready and valid vector arrays
     if (
       !chunk.embedding ||
       chunk.embedding.status !== "ready" ||
@@ -110,7 +139,6 @@ export const retrieveKnowledge = async (query, options = {}) => {
 
     const similarity = cosineSimilarity(queryVector, chunk.embedding.vector);
 
-    // Apply minimum similarity threshold filter
     if (similarity >= effectiveThreshold) {
       candidates.push({
         chunkId: chunk.id,
@@ -124,10 +152,7 @@ export const retrieveKnowledge = async (query, options = {}) => {
     }
   }
 
-  // 7. Sort candidates descending by cosine similarity score
   candidates.sort((a, b) => b.similarity - a.similarity);
-
-  // 8. Select Top-K matching chunks
   const results = candidates.slice(0, effectiveTopK);
 
   return {

@@ -6,20 +6,21 @@
  */
 
 import { THREAT_CORPUS_DOCUMENTS, getAllThreatDocuments } from "../knowledge/threat-corpus.js";
-import { createKnowledgeDocument } from "./knowledge.service.js";
+import { validateDocumentPayload, normalizeDocument } from "../utils/document.utils.js";
+import { createDocumentChunks } from "../utils/chunking.utils.js";
+import { generateEmbeddingsForChunks, setEmbeddingProviderOverride, resetEmbeddingProviderOverride } from "./embedding.service.js";
 import { knowledgeRepository } from "../repositories/knowledge.repository.js";
-import { setEmbeddingProviderOverride, resetEmbeddingProviderOverride } from "./embedding.service.js";
 
 /**
  * Ingests the curated cybersecurity threat knowledge corpus into the AlertIQ Knowledge Base.
  * Reuses the complete existing validation, chunking, embedding, and repository pipeline.
  *
  * Idempotency behavior:
- * - When force = false: If a document with the stable ID already exists, it is skipped (no duplicate chunks or API calls).
- * - When force = true: If a document exists, it is deleted and re-ingested with fresh chunks and embeddings.
+ * - When force = false: If a document with the stable ID already exists with chunks, it is skipped (no duplicate chunks or API calls).
+ * - When force = true: Existing document is replaced atomically in PostgreSQL only after all embeddings are generated and validated.
  *
  * @param {Object} [options={}] - Ingestion configuration options.
- * @param {boolean} [options.force=false] - If true, replaces existing documents and regenerates chunks/embeddings.
+ * @param {boolean} [options.force=false] - If true, replaces existing documents and regenerates chunks/embeddings atomically.
  * @param {Array<Object>} [options.documents] - Optional custom document list (defaults to all 8 threat documents).
  * @param {Function} [options.providerOverride] - Optional custom embedding provider override (for deterministic tests).
  * @param {boolean} [options.verbose=false] - If true, outputs console progress logs during CLI execution.
@@ -55,7 +56,8 @@ export const ingestThreatCorpus = async (options = {}) => {
     for (const doc of corpusDocs) {
       const existing = await knowledgeRepository.findById(doc.id);
 
-      if (existing && !force) {
+      // Idempotent skip when already indexed and not in force mode
+      if (existing && !force && existing.chunkCount > 0) {
         skippedCount++;
         results.push({
           id: doc.id,
@@ -71,26 +73,47 @@ export const ingestThreatCorpus = async (options = {}) => {
         continue;
       }
 
-      if (existing && force) {
-        await knowledgeRepository.deleteById(doc.id);
-        if (verbose) {
-          console.log(`[Threat Corpus] Rebuilding '${doc.id}' (force enabled).`);
-        }
+      if (verbose && existing && force) {
+        console.log(`[Threat Corpus] Rebuilding '${doc.id}' (force enabled, atomic replacement).`);
       }
 
-      // Ingest document using existing knowledge service pipeline
-      const created = await createKnowledgeDocument(doc);
+      // Step 1: Validate & normalize document entity
+      const validatedPayload = validateDocumentPayload(doc);
+      const documentEntity = normalizeDocument(validatedPayload);
+
+      // Step 2: Chunk document
+      const initialChunks = createDocumentChunks(documentEntity, {
+        chunkSize: validatedPayload.chunkSize,
+        overlap: validatedPayload.overlap
+      });
+
+      // Step 3: Generate and validate embeddings for all chunks before modifying database
+      const vectorReadyChunks = await generateEmbeddingsForChunks(initialChunks, {
+        title: documentEntity.title
+      });
+
+      // Step 4: Atomic storage operation (replace if existed, or create if new)
+      let saved;
+      if (typeof knowledgeRepository.replaceDocument === "function") {
+        saved = await knowledgeRepository.replaceDocument(documentEntity, vectorReadyChunks);
+      } else {
+        if (existing) {
+          await knowledgeRepository.deleteById(doc.id);
+        }
+        saved = await knowledgeRepository.create(documentEntity, vectorReadyChunks);
+      }
+
       ingestedCount++;
 
       results.push({
-        id: created.document.id,
-        title: created.document.title,
+        id: saved.document.id,
+        title: saved.document.title,
         status: "ingested",
-        chunkCount: created.chunkCount
+        chunkCount: saved.chunks.length
       });
 
       if (verbose) {
-        console.log(`[Threat Corpus] Successfully indexed '${created.document.id}' (${created.chunkCount} chunks).`);
+        console.log(`[Threat Corpus] Successfully indexed '${saved.document.id}' (${saved.chunks.length} chunks).`);
       }
     }
   } finally {
@@ -132,7 +155,7 @@ export const getThreatCorpusStatus = async () => {
 
   for (const doc of corpusDocs) {
     const existing = await knowledgeRepository.findById(doc.id);
-    const isIndexed = Boolean(existing);
+    const isIndexed = Boolean(existing && (existing.chunkCount > 0 || (existing.chunks && existing.chunks.length > 0)));
 
     if (isIndexed) {
       indexedCount++;
@@ -144,7 +167,7 @@ export const getThreatCorpusStatus = async () => {
       authority: doc.metadata?.authority || doc.source || "N/A",
       threatType: doc.metadata?.threatType || "unknown",
       isIndexed,
-      chunkCount: existing?.chunkCount || 0,
+      chunkCount: existing?.chunkCount || existing?.chunks?.length || 0,
       createdAt: existing?.createdAt
     });
   }
