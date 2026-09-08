@@ -21,7 +21,7 @@
  * 5. Deterministic RAG vs Non-RAG pipeline comparison
  */
 
-import { knowledgeRepository } from "../src/repositories/knowledge.repository.js";
+import { knowledgeRepository, useInMemoryRepository } from "../src/repositories/knowledge.repository.js";
 import {
   benchmarkDocuments,
   createDeterministicVector
@@ -47,6 +47,7 @@ const assert = (condition, testName, details = "") => {
 };
 
 const runTests = async () => {
+  useInMemoryRepository();
   console.log("\n==========================================================");
   console.log(" ALERT-IQ MODULE 3.21: RAG EXPLAINABILITY & TRACE TESTS   ");
   console.log("==========================================================\n");

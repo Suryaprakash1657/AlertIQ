@@ -16,7 +16,7 @@
 
 import { THREAT_CORPUS_DOCUMENTS, getAllThreatDocuments, getThreatDocumentById } from "../src/knowledge/threat-corpus.js";
 import { ingestThreatCorpus, getThreatCorpusStatus } from "../src/services/threat-corpus.service.js";
-import { knowledgeRepository } from "../src/repositories/knowledge.repository.js";
+import { knowledgeRepository, useInMemoryRepository } from "../src/repositories/knowledge.repository.js";
 import { validateDocumentPayload, normalizeDocument, DOCUMENT_LIMITS } from "../src/utils/document.utils.js";
 import { createDocumentChunks } from "../src/utils/chunking.utils.js";
 import { retrieveKnowledge } from "../src/services/retrieval.service.js";
@@ -101,6 +101,7 @@ const runTest = async (name, fn) => {
 };
 
 const main = async () => {
+  useInMemoryRepository();
   console.log("\n===============================================================");
   console.log("     AlertIQ Module 3.22 — Real Threat Knowledge Base Tests    ");
   console.log("===============================================================\n");

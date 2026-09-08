@@ -19,6 +19,7 @@ import {
 import { clearKnowledgeBase } from "../src/services/knowledge.service.js";
 import { knowledgeRepository } from "../src/repositories/knowledge.repository.js";
 import { chunkText, createDocumentChunks } from "../src/utils/chunking.utils.js";
+import { closePool } from "../src/config/db.js";
 
 // Helper to generate a deterministic 768-dimensional mock vector
 const createMock768Vector = (seed = 1) => {
@@ -387,7 +388,10 @@ async function runTests() {
     console.log("======================================================\n");
   } finally {
     resetEmbeddingProviderOverride();
-    server.close();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    await closePool();
   }
 
   if (failed > 0) {

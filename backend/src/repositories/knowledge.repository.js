@@ -624,6 +624,12 @@ export class PostgresKnowledgeRepository {
   }
 
   async clear() {
+    if (process.env.ALLOW_DATABASE_TRUNCATE !== "true") {
+      throw new Error(
+        "[Safety Guard] PostgresKnowledgeRepository.clear() is blocked to prevent accidental deletion of persistent database records. " +
+        "To clear repository state in tests, isolate tests with useInMemoryRepository()."
+      );
+    }
     await dbQuery("DELETE FROM knowledge_documents;");
   }
 }
