@@ -13,7 +13,7 @@
  * 9. Provider-independent deterministic execution
  */
 
-import { knowledgeRepository } from "../src/repositories/knowledge.repository.js";
+import { knowledgeRepository, useInMemoryRepository } from "../src/repositories/knowledge.repository.js";
 import {
   benchmarkDocuments,
   benchmarkTestCases
@@ -49,6 +49,7 @@ const assert = (condition, testName, details = "") => {
 };
 
 const runTests = async () => {
+  useInMemoryRepository();
   console.log("\n=======================================================");
   console.log(" ALERT-IQ MODULE 3.21: RETRIEVAL EVALUATION TEST SUITE ");
   console.log("=======================================================\n");

@@ -9,7 +9,7 @@ import { THREAT_CORPUS_DOCUMENTS, getAllThreatDocuments } from "../knowledge/thr
 import { validateDocumentPayload, normalizeDocument } from "../utils/document.utils.js";
 import { createDocumentChunks } from "../utils/chunking.utils.js";
 import { generateEmbeddingsForChunks, setEmbeddingProviderOverride, resetEmbeddingProviderOverride } from "./embedding.service.js";
-import { knowledgeRepository } from "../repositories/knowledge.repository.js";
+import { knowledgeRepository, getKnowledgeRepository, PostgresKnowledgeRepository } from "../repositories/knowledge.repository.js";
 
 /**
  * Ingests the curated cybersecurity threat knowledge corpus into the AlertIQ Knowledge Base.
@@ -43,6 +43,24 @@ export const ingestThreatCorpus = async (options = {}) => {
   const corpusDocs = Array.isArray(options.documents) && options.documents.length > 0
     ? options.documents
     : getAllThreatDocuments();
+
+  const isMockProvider = typeof options.providerOverride === "function";
+  const activeRepo = getKnowledgeRepository();
+  const isPostgresRepo = activeRepo instanceof PostgresKnowledgeRepository || activeRepo?.constructor?.name === "PostgresKnowledgeRepository";
+
+  // Safety Guard: Block mock/synthetic embedding provider from mutating production threat documents in PostgreSQL
+  if (isMockProvider && isPostgresRepo) {
+    const hasProductionThreatDocs = corpusDocs.some((d) => d.id && d.id.startsWith("doc-threat-"));
+    if (hasProductionThreatDocs) {
+      const guardError = new Error(
+        `[Safety Guard] Blocked attempt to ingest production threat corpus ('doc-threat-*') with a mock embedding provider into PostgreSQL. ` +
+        `Use in-memory repository (useInMemoryRepository()) or test-scoped IDs (e.g. 'doc-test-*') for tests, or use the real Gemini provider for database seeding.`
+      );
+      guardError.statusCode = 403;
+      guardError.code = "MOCK_EMBEDDING_SAFETY_GUARD";
+      throw guardError;
+    }
+  }
 
   if (typeof options.providerOverride === "function") {
     setEmbeddingProviderOverride(options.providerOverride);

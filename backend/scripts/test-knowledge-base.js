@@ -22,8 +22,11 @@
 
 import app from "../src/app.js";
 import { clearKnowledgeBase } from "../src/services/knowledge.service.js";
+import { useInMemoryRepository } from "../src/repositories/knowledge.repository.js";
+import { closePool } from "../src/config/db.js";
 
 async function runTests() {
+  useInMemoryRepository();
   const server = app.listen(0);
   const { port } = server.address();
   const baseUrl = `http://localhost:${port}/api/knowledge`;
@@ -317,7 +320,10 @@ async function runTests() {
     console.error(err.stack);
     failed++;
   } finally {
-    server.close();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    await closePool();
   }
 
   console.log(`\n======================================================`);

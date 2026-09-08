@@ -23,6 +23,7 @@ import {
 } from "../src/services/alert-analysis.service.js";
 import { ingestThreatCorpus } from "../src/services/threat-corpus.service.js";
 import { clearKnowledgeBase } from "../src/services/knowledge.service.js";
+import { useInMemoryRepository } from "../src/repositories/knowledge.repository.js";
 import { config } from "../src/config/env.js";
 
 // Deterministic mock embedding provider
@@ -154,6 +155,7 @@ const runTest = async (name, fn) => {
 };
 
 const main = async () => {
+  useInMemoryRepository();
   console.log("\n===============================================================");
   console.log("   AlertIQ Module 3.23 — Production Alert Analysis Tests       ");
   console.log("===============================================================\n");
