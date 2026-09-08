@@ -77,8 +77,8 @@ const executeStructuredLlmCall = async ({ contents, options = {} }) => {
     responseMimeType: "application/json"
   };
 
-  let response;
-  const maxRetries = 3;
+    let response;
+  const maxRetries = 4;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -89,7 +89,8 @@ const executeStructuredLlmCall = async ({ contents, options = {} }) => {
       });
       break;
     } catch (err) {
-      const errStr = (err?.message || "").toLowerCase();
+      const rawMessage = err?.message || "";
+      const errStr = rawMessage.toLowerCase();
       const isTransient =
         errStr.includes("503") ||
         errStr.includes("high demand") ||
@@ -98,11 +99,18 @@ const executeStructuredLlmCall = async ({ contents, options = {} }) => {
         errStr.includes("unavailable");
 
       if (isTransient && attempt < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
+        // Check for recommended retry delay from Gemini response
+        const delayMatch = rawMessage.match(/retry in ([0-9.]+)s/i);
+        const waitTime = delayMatch
+          ? Math.min(60000, Math.ceil(parseFloat(delayMatch[1]) * 1000) + 2000)
+          : attempt * 2000;
+
+        console.log(`[Alert Analysis] Transient rate-limit (attempt ${attempt}/${maxRetries}), waiting ${Math.round(waitTime / 1000)}s before retry...`);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
         continue;
       }
 
-      const sanitized = sanitizeErrorMessage(err?.message || "LLM generation failed.");
+      const sanitized = sanitizeErrorMessage(rawMessage || "LLM generation failed.");
       const providerError = new Error(`LLM provider error: ${sanitized}`);
       providerError.statusCode = err?.status || err?.statusCode || 502;
       throw providerError;
