@@ -5,6 +5,7 @@
  */
 
 import { analyzeAlertPipeline } from "../services/alert-analysis.service.js";
+import { chatWithAlertPipeline } from "../services/alert-chat.service.js";
 
 /**
  * Handle POST /api/alerts/analyze
@@ -38,3 +39,37 @@ export const analyzeAlert = async (req, res) => {
     });
   }
 };
+
+/**
+ * Handle POST /api/alerts/chat
+ *
+ * Accepts:
+ * {
+ *   "alert": { ... }, // required structured alert
+ *   "prompt": "...",  // required follow-up question/focus
+ *   "messages": [ ... ], // optional prior conversation turns
+ *   "enableRag": true, // optional boolean (default: true)
+ *   "topK": 5,         // optional positive integer
+ *   "similarityThreshold": 0.60 // optional float between -1.0 and 1.0
+ * }
+ *
+ * Returns conversational response, citations, scope status, token accounting, and cost estimation.
+ */
+export const chatWithAlert = async (req, res) => {
+  try {
+    const payload = req.body || {};
+
+    const result = await chatWithAlertPipeline(payload);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    const statusCode = error.statusCode || error.status || 500;
+    const message = error.message || "Failed to process follow-up chat inquiry.";
+
+    return res.status(statusCode).json({
+      success: false,
+      error: message
+    });
+  }
+};
+

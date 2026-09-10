@@ -155,3 +155,70 @@ export const buildRagContext = (retrievalResults = [], options = {}) => {
     sourcesUsed
   };
 };
+
+/**
+ * Constructs a dynamic, context-aware semantic retrieval query for follow-up chat turns.
+ * Blends core alert telemetry with the specific user inquiry to optimize vector search for
+ * alternatives, investigation steps, false-positive checks, or trade-offs.
+ *
+ * @param {Object} alert - Validated security alert object.
+ * @param {string} prompt - Current user follow-up prompt or question.
+ * @returns {string} Dynamic, bounded retrieval query text.
+ */
+export const constructDynamicChatQuery = (alert, prompt = "") => {
+  if (!alert || typeof alert !== "object") {
+    return typeof prompt === "string" ? prompt.trim().slice(0, 1000) : "";
+  }
+
+  const parts = [];
+
+  // 1. High-signal alert core signals
+  if (alert.severity) {
+    parts.push(`[${alert.severity.toUpperCase()}]`);
+  }
+
+  if (alert.title && typeof alert.title === "string") {
+    parts.push(alert.title.trim());
+  }
+
+  if (alert.targetHost || alert.affectedAsset) {
+    const host = alert.targetHost || alert.affectedAsset;
+    parts.push(`Host: ${String(host).trim()}`);
+  }
+
+  if (alert.description && typeof alert.description === "string") {
+    parts.push(`Context: ${alert.description.trim()}`);
+  }
+
+  // 2. High-priority user prompt focus (Dynamic driver of vector geometry)
+  if (typeof prompt === "string" && prompt.trim() !== "") {
+    parts.push(`Question / Investigation Focus: ${prompt.trim()}`);
+  }
+
+  // 3. Bounded evidence log snippet
+  const rawLogs = alert.rawLogs || alert.evidence;
+  if (rawLogs !== undefined && rawLogs !== null) {
+    let evidenceText = "";
+    if (typeof rawLogs === "string") {
+      evidenceText = rawLogs.trim();
+    } else if (Array.isArray(rawLogs)) {
+      evidenceText = rawLogs.map((item) => (typeof item === "object" ? JSON.stringify(item) : String(item))).join(" ");
+    } else if (typeof rawLogs === "object") {
+      try {
+        evidenceText = JSON.stringify(rawLogs);
+      } catch {
+        evidenceText = String(rawLogs);
+      }
+    }
+
+    const cleanEvidence = evidenceText.replace(/\s+/g, " ").trim();
+    if (cleanEvidence.length > 0) {
+      const boundedEvidence = cleanEvidence.length > 250 ? `${cleanEvidence.slice(0, 250)}...` : cleanEvidence;
+      parts.push(`Evidence: ${boundedEvidence}`);
+    }
+  }
+
+  const combinedQuery = parts.join(" ");
+  return combinedQuery.length > 1000 ? combinedQuery.slice(0, 1000).trim() : combinedQuery;
+};
+

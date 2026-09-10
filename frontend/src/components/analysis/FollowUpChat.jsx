@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Sparkles, User, Terminal, Database, Loader2, AlertTriangle } from "lucide-react";
+import { Send, Sparkles, User, Terminal, Database, Loader2, AlertTriangle, ShieldAlert, Info } from "lucide-react";
 import { alertService } from "../../services/alertService.js";
 import { mapAlertToBackendPayload } from "../../utils/alertMapper.js";
+import ChatMarkdownRenderer from "./ChatMarkdownRenderer.jsx";
 
 export default function FollowUpChat({ alert, onViewSource }) {
   const [messages, setMessages] = useState([]);
@@ -10,9 +11,9 @@ export default function FollowUpChat({ alert, onViewSource }) {
   const messagesEndRef = useRef(null);
 
   const chips = [
-    "What specific evidence supports this containment action?",
-    "Are there alternative hotfixes or mitigation steps?",
-    "What are the immediate indicators of compromise to monitor?"
+    "What is a less disruptive alternative to network isolation?",
+    "Could this be a false positive, and how do I verify?",
+    "What are the risks of immediately terminating active sessions?"
   ];
 
   const scrollToBottom = () => {
@@ -33,42 +34,35 @@ export default function FollowUpChat({ alert, onViewSource }) {
       text: userText
     };
 
-    // Append user message immediately
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
-    setInputValue("");
-    setIsTyping(true);
-
-    try {
-      // Build conversation history messages format for backend
-      const historyMessages = updatedMessages.slice(0, -1).map((m) => ({
+    // Capture prior history turns before adding the new user message
+    const historyMessages = messages
+      .filter((m) => !m.isError)
+      .map((m) => ({
         role: m.sender === "user" ? "user" : "assistant",
         content: m.text
       }));
 
+    // Append user message immediately to the UI
+    setMessages((prev) => [...prev, userMsg]);
+    setInputValue("");
+    setIsTyping(true);
+
+    try {
       const payload = mapAlertToBackendPayload(alert, {
         prompt: userText,
         messages: historyMessages,
         enableRag: true
       });
 
-      const res = await alertService.analyzeAlert(payload);
-
-      let replyText = res.analysis?.summary || "Investigation guidance compiled.";
-      if (res.analysis?.recommendedActions && res.analysis.recommendedActions.length > 0) {
-        replyText += `\n\nKey Recommended Actions:\n${res.analysis.recommendedActions.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
-      }
-
-      const citations = Array.isArray(res.knowledgeContext?.sourcesUsed)
-        ? res.knowledgeContext.sourcesUsed
-        : [];
+      // Call dedicated conversational endpoint POST /api/alerts/chat
+      const res = await alertService.chatWithAlert(payload);
 
       const aiMsg = {
         id: `ai-${Date.now()}`,
         sender: "assistant",
-        text: replyText,
-        citations,
-        riskLevel: res.analysis?.riskAssessment?.level
+        text: res.response || "No guidance returned.",
+        citations: Array.isArray(res.citations) ? res.citations : [],
+        isOutOfScope: Boolean(res.isOutOfScope)
       };
 
       setMessages((prev) => [...prev, aiMsg]);
@@ -94,7 +88,7 @@ export default function FollowUpChat({ alert, onViewSource }) {
         <div className="flex items-center gap-2">
           <Sparkles size={15} className="text-rose-500" />
           <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-            Interactive Follow-Up Session
+            Interactive Follow-Up Assistant
           </h3>
         </div>
         <span className="text-[9px] text-slate-500 font-mono">
@@ -103,12 +97,12 @@ export default function FollowUpChat({ alert, onViewSource }) {
       </div>
 
       {/* Messages list */}
-      <div className="p-5 flex-1 overflow-y-auto space-y-4 min-h-[220px] max-h-[360px] bg-slate-950/20">
+      <div className="p-5 flex-1 overflow-y-auto space-y-4 min-h-[220px] max-h-[380px] bg-slate-950/20">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2">
             <span className="text-slate-500 text-xs">No active dialogue yet.</span>
             <p className="text-[10px] text-slate-600 max-w-xs leading-relaxed">
-              Ask follow-up questions to investigate root causes or explore alternative runbook mitigations.
+              Ask follow-up questions to investigate root causes, explore alternative mitigations, or assess operational trade-offs.
             </p>
           </div>
         ) : (
@@ -125,21 +119,42 @@ export default function FollowUpChat({ alert, onViewSource }) {
                   ? "bg-slate-850 border-slate-750 text-slate-300"
                   : m.isError
                   ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                  : m.isOutOfScope
+                  ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
                   : "bg-rose-500/10 border-rose-500/20 text-rose-500"
               }`}>
-                {m.sender === "user" ? <User size={14} /> : <Terminal size={14} />}
+                {m.sender === "user" ? (
+                  <User size={14} />
+                ) : m.isOutOfScope ? (
+                  <Info size={14} />
+                ) : (
+                  <Terminal size={14} />
+                )}
               </div>
 
               {/* Chat Message Bubble */}
-              <div className="max-w-[80%] space-y-2">
-                <div className={`p-3.5 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
+              <div className="max-w-[88%] space-y-2">
+                {/* Out of scope badge */}
+                {m.isOutOfScope && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded uppercase tracking-wider">
+                    Incident Scope Notice
+                  </span>
+                )}
+
+                <div className={`p-3.5 rounded-xl text-xs leading-relaxed ${
                   m.sender === "user"
-                    ? "bg-slate-800 text-slate-100 rounded-tr-none"
+                    ? "bg-slate-800 text-slate-100 rounded-tr-none whitespace-pre-wrap"
                     : m.isError
-                    ? "bg-rose-950/30 border border-rose-500/30 text-rose-300 rounded-tl-none"
+                    ? "bg-rose-950/30 border border-rose-500/30 text-rose-300 rounded-tl-none whitespace-pre-wrap"
+                    : m.isOutOfScope
+                    ? "bg-amber-950/20 border border-amber-500/30 text-amber-200 rounded-tl-none"
                     : "bg-slate-900 border border-slate-850 text-slate-200 rounded-tl-none"
                 }`}>
-                  {m.text}
+                  {m.sender === "user" || m.isError ? (
+                    m.text
+                  ) : (
+                    <ChatMarkdownRenderer content={m.text} />
+                  )}
                 </div>
 
                 {/* Citations block */}
@@ -156,7 +171,7 @@ export default function FollowUpChat({ alert, onViewSource }) {
                         className="text-[9px] font-semibold text-slate-400 bg-slate-950 border border-slate-850 px-2 py-0.5 rounded flex items-center gap-1 hover:text-slate-200 hover:border-slate-700 transition cursor-pointer"
                         title={c.title}
                       >
-                        📄 {c.title.split(' ')[0]}... ({Math.round((c.similarity || 0) * 100)}%)
+                        📄 {c.title?.length > 25 ? `${c.title.slice(0, 25)}...` : c.title} ({Math.round((c.similarity || 0) * 100)}%)
                       </button>
                     ))}
                   </div>
@@ -224,3 +239,4 @@ export default function FollowUpChat({ alert, onViewSource }) {
     </div>
   );
 }
+
