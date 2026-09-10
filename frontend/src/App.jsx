@@ -9,62 +9,20 @@ import KnowledgeBase from "./pages/KnowledgeBase";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
 
-// Seed data imports
+// Simulated SIEM/EDR alert feed
 import { mockAlerts } from "./data/mockAlerts";
-import { mockDocuments } from "./data/mockDocuments";
 
 export default function App() {
-  // Global Shared States for the prototype
+  // Global Shared States for incoming alert telemetry queue
   const [alerts, setAlerts] = useState(mockAlerts);
-  const [documents, setDocuments] = useState(mockDocuments);
-  const [history, setHistory] = useState([
-    {
-      id: "HIST-001",
-      alertId: "ALT-2026-001",
-      alertTitle: "Suspicious PowerShell Activity",
-      severity: "HIGH",
-      status: "Completed",
-      sourcesRetrieved: "3 sources",
-      confidence: "High confidence",
-      analyzedAt: "Aug 20, 2026, 10:42 AM"
-    },
-    {
-      id: "HIST-002",
-      alertId: "ALT-2026-004",
-      alertTitle: "Critical Vulnerability Detected",
-      severity: "HIGH",
-      status: "Completed",
-      sourcesRetrieved: "2 sources",
-      confidence: "Medium confidence",
-      analyzedAt: "Aug 19, 2026, 02:45 PM"
-    },
-    {
-      id: "HIST-003",
-      alertId: "ALT-2026-006",
-      alertTitle: "Suspicious Registry Modification",
-      severity: "CRITICAL",
-      status: "Low confidence",
-      sourcesRetrieved: "0 sources",
-      confidence: "Low confidence",
-      analyzedAt: "Aug 18, 2026, 08:12 AM"
-    }
-  ]);
 
-  // Actions to mutate state dynamically during runtime
+  // Action to mutate alert status dynamically during analysis runtime
   const updateAlertStatus = (id, newStatus) => {
     setAlerts((prev) =>
       prev.map((alert) =>
         alert.id === id ? { ...alert, status: newStatus } : alert
       )
     );
-  };
-
-  const addDocument = (newDoc) => {
-    setDocuments((prev) => [newDoc, ...prev]);
-  };
-
-  const addHistoryEntry = (newEntry) => {
-    setHistory((prev) => [newEntry, ...prev]);
   };
 
   return (
@@ -83,7 +41,7 @@ export default function App() {
             <Routes>
               <Route 
                 path="/" 
-                element={<Dashboard alerts={alerts} documents={documents} history={history} />} 
+                element={<Dashboard alerts={alerts} />} 
               />
               <Route 
                 path="/dashboard" 
@@ -94,22 +52,25 @@ export default function App() {
                 element={<Alerts alerts={alerts} />} 
               />
               <Route 
+                path="/analysis/history/:analysisId" 
+                element={<AlertAnalysis alerts={alerts} />} 
+              />
+              <Route 
                 path="/analysis/:id" 
                 element={
                   <AlertAnalysis 
                     alerts={alerts} 
                     updateAlertStatus={updateAlertStatus} 
-                    addHistoryEntry={addHistoryEntry} 
                   />
                 } 
               />
               <Route 
                 path="/knowledge" 
-                element={<KnowledgeBase documents={documents} addDocument={addDocument} />} 
+                element={<KnowledgeBase />} 
               />
               <Route 
                 path="/history" 
-                element={<History history={history} />} 
+                element={<History />} 
               />
               <Route 
                 path="/settings" 

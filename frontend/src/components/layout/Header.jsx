@@ -1,10 +1,38 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { Search, Bell, Shield, CheckCircle, Database } from "lucide-react";
+import { Search, Bell, Shield, CheckCircle, Database, AlertCircle, Loader2 } from "lucide-react";
+import { healthService } from "../../services/healthService.js";
 
 export default function Header() {
   const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [healthStatus, setHealthStatus] = useState({ isChecking: true, isOnline: null, error: null });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkSystemHealth = async () => {
+      try {
+        const res = await healthService.checkHealth();
+        if (isMounted) {
+          setHealthStatus({ isChecking: false, isOnline: res.status === "ok", error: null });
+        }
+      } catch (err) {
+        if (isMounted) {
+          setHealthStatus({ isChecking: false, isOnline: false, error: err.message });
+        }
+      }
+    };
+
+    checkSystemHealth();
+    // Poll gently every 60 seconds
+    const interval = setInterval(checkSystemHealth, 60000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const getPageTitleInfo = () => {
     const path = location.pathname;
@@ -55,7 +83,7 @@ export default function Header() {
   // Mock system notifications for the bell icon
   const notifications = [
     { id: 1, text: "New high-severity alert forwarded from EDR", time: "5m ago", unread: true },
-    { id: 2, text: "Knowledge Base indexing complete: 3 files added", time: "1h ago", unread: false },
+    { id: 2, text: "Knowledge Base indexing complete: verified with PostgreSQL", time: "1h ago", unread: false },
     { id: 3, text: "Failed login threshold exceeded on AUTH-SERVER-04", time: "2h ago", unread: false }
   ];
 
@@ -89,7 +117,7 @@ export default function Header() {
         <div className="relative">
           <button
             onClick={() => setShowNotifications(!showNotifications)}
-            className="p-2 rounded-lg bg-slate-800/40 border border-slate-800 hover:border-slate-700 hover:bg-slate-800/60 text-slate-300 hover:text-slate-100 transition relative"
+            className="p-2 rounded-lg bg-slate-800/40 border border-slate-800 hover:border-slate-700 hover:bg-slate-800/60 text-slate-300 hover:text-slate-100 transition relative cursor-pointer"
           >
             <Bell size={16} />
             <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse-subtle" />
@@ -124,16 +152,28 @@ export default function Header() {
           )}
         </div>
 
-        {/* User Badge Info */}
+        {/* System Health Status Indicator */}
         <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
           <div className="text-right hidden sm:block">
             <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              SOC Server Status
+              Backend Status
             </span>
-            <span className="text-xs text-emerald-400 font-bold flex items-center justify-end gap-1.5 mt-0.5">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-              RAG API Ready
-            </span>
+            {healthStatus.isChecking ? (
+              <span className="text-xs text-amber-400 font-bold flex items-center justify-end gap-1.5 mt-0.5">
+                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                Checking API...
+              </span>
+            ) : healthStatus.isOnline ? (
+              <span className="text-xs text-emerald-400 font-bold flex items-center justify-end gap-1.5 mt-0.5" title="Connected to PostgreSQL & LLM backend">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                Backend Online
+              </span>
+            ) : (
+              <span className="text-xs text-rose-400 font-bold flex items-center justify-end gap-1.5 mt-0.5" title="Cannot connect to backend server">
+                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
+                Backend Offline
+              </span>
+            )}
           </div>
         </div>
       </div>

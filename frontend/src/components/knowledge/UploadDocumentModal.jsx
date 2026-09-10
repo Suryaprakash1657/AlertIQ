@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { X, FileText, Upload, Plus } from "lucide-react";
-import IngestionProgress from "./IngestionProgress";
+import { X, Upload, Plus, FileText, AlertTriangle, Loader2, CheckCircle } from "lucide-react";
+import { knowledgeService } from "../../services/knowledgeService.js";
 
 export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
   if (!isOpen) return null;
@@ -8,48 +8,99 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
   const [title, setTitle] = useState("");
   const [type, setType] = useState("Incident Runbook");
   const [description, setDescription] = useState("");
+  const [content, setContent] = useState("");
   const [fileName, setFileName] = useState("");
   const [isIngesting, setIsIngesting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [ingestionPhase, setIngestionPhase] = useState("");
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setFileName(file.name);
+      setErrorMessage("");
+
+      // Auto-fill title if empty
       if (!title) {
-        // Auto fill title with file base name without ext
         setTitle(file.name.replace(/\.[^/.]+$/, ""));
       }
+
+      // Read file text content
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result;
+        if (typeof text === "string") {
+          setContent(text);
+          if (!description) {
+            // Provide short excerpt as initial description
+            setDescription(text.slice(0, 140).trim());
+          }
+        }
+      };
+      reader.onerror = () => {
+        setErrorMessage("Failed to read file. Please ensure it is a valid text, markdown, or JSON file.");
+      };
+      reader.readAsText(file);
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title || !description) return;
-    setIsIngesting(true);
-  };
+    setErrorMessage("");
 
-  const handleIngestionFinished = () => {
-    const newDoc = {
-      id: `DOC-SEED-${Date.now()}`,
-      title: title || "Ingested Security Reference",
-      type: type,
-      status: "Indexed",
-      chunks: Math.floor(Math.random() * 35) + 12,
-      lastUpdated: "Aug 20, 2026",
-      description: description,
-      content: `Uploaded Document: ${title}\nCategory: ${type}\n\nIngestion Summary:\nThis document has been fully indexed by AlertIQ. Matching chunks will be retrieved automatically when corresponding alerts are analyzed by the RAG mitigation controller.\n\nRaw Description:\n${description}`
-    };
-    onSuccess(newDoc);
-    resetForm();
-    onClose();
+    const trimmedTitle = title.trim();
+    const finalContent = (content || description).trim();
+
+    if (!trimmedTitle) {
+      setErrorMessage("Document title is required.");
+      return;
+    }
+
+    if (!finalContent) {
+      setErrorMessage("Document content is required. Please upload a file or type content.");
+      return;
+    }
+
+    try {
+      setIsIngesting(true);
+      setIngestionPhase("Chunking document and generating dense vector embeddings...");
+
+      const payload = {
+        title: trimmedTitle,
+        content: finalContent,
+        source: "Internal Knowledge Base",
+        metadata: {
+          category: type,
+          type: type,
+          description: description.trim() || trimmedTitle
+        }
+      };
+
+      const result = await knowledgeService.createDocument(payload);
+
+      setIngestionPhase("Indexed successfully!");
+      if (onSuccess) {
+        onSuccess(result.document);
+      }
+
+      resetForm();
+      onClose();
+    } catch (err) {
+      setIsIngesting(false);
+      setIngestionPhase("");
+      setErrorMessage(err.message || "Failed to ingest document into knowledge base.");
+    }
   };
 
   const resetForm = () => {
     setTitle("");
     setType("Incident Runbook");
     setDescription("");
+    setContent("");
     setFileName("");
     setIsIngesting(false);
+    setErrorMessage("");
+    setIngestionPhase("");
   };
 
   return (
@@ -78,7 +129,8 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
               resetForm();
               onClose();
             }}
-            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+            disabled={isIngesting}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition disabled:opacity-50 cursor-pointer"
           >
             <X size={18} />
           </button>
@@ -87,31 +139,62 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
         {/* Modal Content */}
         <div className="p-6">
           {isIngesting ? (
-            <IngestionProgress onFinished={handleIngestionFinished} />
+            /* Live Ingestion Processing State */
+            <div className="flex flex-col items-center justify-center p-8 text-center space-y-6 min-h-[300px]">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-rose-500/10 animate-ping" />
+                <div className="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-rose-500 relative z-10">
+                  <Loader2 className="animate-spin" size={28} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
+                  Indexing Document
+                </h4>
+                <p className="text-xs text-slate-400 max-w-xs font-mono">
+                  {ingestionPhase}
+                </p>
+              </div>
+
+              <div className="w-full bg-slate-950 border border-slate-850 rounded-full h-2 overflow-hidden">
+                <div className="bg-gradient-to-r from-rose-600 to-orange-500 h-full w-3/4 animate-pulse" />
+              </div>
+
+              <span className="text-[10px] text-slate-500 font-mono">
+                Calculating vector embeddings via Gemini Embedding Model...
+              </span>
+            </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+              {errorMessage && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-start gap-2.5 text-xs text-rose-300">
+                  <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{errorMessage}</span>
+                </div>
+              )}
+
               {/* File Select */}
               <div className="space-y-1.5">
                 <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
-                  Select File
+                  Select File (TXT, MD, JSON)
                 </label>
-                <div className="relative border border-dashed border-slate-800 hover:border-slate-700 bg-slate-950/40 rounded-xl p-6 text-center cursor-pointer transition">
+                <div className="relative border border-dashed border-slate-800 hover:border-slate-700 bg-slate-950/40 rounded-xl p-5 text-center cursor-pointer transition">
                   <input
                     type="file"
-                    accept=".pdf,.txt,.md,.json"
+                    accept=".pdf,.txt,.md,.json,.text"
                     onChange={handleFileChange}
                     className="absolute inset-0 opacity-0 cursor-pointer"
-                    required={!fileName}
                   />
                   <div className="flex flex-col items-center justify-center space-y-2">
                     <div className="p-2 bg-slate-900 border border-slate-850 rounded-lg text-slate-400">
-                      <FileText size={20} />
+                      <FileText size={18} />
                     </div>
                     <span className="text-xs text-slate-300 font-semibold block">
-                      {fileName ? fileName : "Drag and drop your document here"}
+                      {fileName ? fileName : "Drag & drop or click to browse files"}
                     </span>
                     <span className="text-[10px] text-slate-500 block">
-                      Supports PDF, TXT, MD or JSON up to 10MB
+                      Supports .txt, .md, and .json files
                     </span>
                   </div>
                 </div>
@@ -148,17 +231,27 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
                 </select>
               </div>
 
-              {/* Description */}
+              {/* Content / Description */}
               <div className="space-y-1.5">
-                <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
-                  Description
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
+                    Document Content
+                  </label>
+                  {content && (
+                    <span className="text-[9px] text-slate-500 font-mono">
+                      {content.length} characters loaded
+                    </span>
+                  )}
+                </div>
                 <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows="3"
-                  placeholder="Brief summary of document sections, guidelines and target exploits..."
-                  className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-650 focus:outline-none focus:border-slate-750 transition"
+                  value={content || description}
+                  onChange={(e) => {
+                    setContent(e.target.value);
+                    if (!description) setDescription(e.target.value.slice(0, 140));
+                  }}
+                  rows="4"
+                  placeholder="Paste runbook text, investigation steps, mitigation procedures..."
+                  className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-650 focus:outline-none focus:border-slate-750 font-mono transition"
                   required
                 />
               </div>
@@ -177,10 +270,11 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-all duration-200 shadow-[0_0_12px_rgba(225,29,72,0.15)] flex items-center gap-1.5 cursor-pointer"
+                  disabled={!title.trim() || (!content.trim() && !description.trim())}
+                  className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 disabled:bg-slate-850 disabled:text-slate-600 text-white rounded-lg transition-all duration-200 shadow-[0_0_12px_rgba(225,29,72,0.15)] flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus size={14} />
-                  Upload & Process
+                  Upload & Ingest
                 </button>
               </div>
             </form>

@@ -1,79 +1,161 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Terminal, Shield, Sparkles, Check, Database, HelpCircle } from "lucide-react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { Terminal, Sparkles, Database, AlertTriangle, RefreshCw, ArrowLeft, Loader2, Archive } from "lucide-react";
 import AlertDetails from "../components/analysis/AlertDetails";
 import AnalysisLoader from "../components/analysis/AnalysisLoader";
 import MitigationResult from "../components/analysis/MitigationResult";
 import SourceEvidence from "../components/analysis/SourceEvidence";
 import SourceModal from "../components/analysis/SourceModal";
 import FollowUpChat from "../components/analysis/FollowUpChat";
-import LowConfidenceState from "../components/analysis/LowConfidenceState";
-import { mockAnalyses } from "../data/mockAnalyses";
+import { alertService } from "../services/alertService.js";
+import { historyService } from "../services/historyService.js";
+import { mapAlertToBackendPayload } from "../utils/alertMapper.js";
 
-export default function AlertAnalysis({ alerts, updateAlertStatus, addHistoryEntry }) {
-  const { id } = useParams();
+export default function AlertAnalysis({ alerts = [], updateAlertStatus, addHistoryEntry }) {
+  const params = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
 
-  // Find target alert
-  const alert = alerts.find((a) => a.id === id);
+  // Mode Detection: Historical vs Live
+  const isHistoricalMode = Boolean(params.analysisId || location.pathname.includes("/analysis/history/"));
+  const analysisId = params.analysisId;
+  const liveAlertId = params.id;
 
+  // Live Alert Lookup
+  const liveAlert = !isHistoricalMode ? alerts.find((a) => a.id === liveAlertId) : null;
+
+  // Component State
+  const [historicalAlert, setHistoricalAlert] = useState(null);
+  const [analysisData, setAnalysisData] = useState(null);
+  const [isLoadingHistorical, setIsLoadingHistorical] = useState(isHistoricalMode);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisComplete, setAnalysisComplete] = useState(false);
+  const [error, setError] = useState(null);
   const [selectedSource, setSelectedSource] = useState(null);
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
 
-  // If alert is not found, redirect to alerts list
+  // 1. Historical Mode Data Loading
   useEffect(() => {
-    if (!alert) {
+    if (!isHistoricalMode || !analysisId) return;
+
+    let isMounted = true;
+    const fetchHistoricalAnalysis = async () => {
+      try {
+        setIsLoadingHistorical(true);
+        setError(null);
+
+        const res = await historyService.getHistoryById(analysisId);
+        if (!isMounted) return;
+
+        const record = res.data;
+        if (!record) {
+          throw new Error(`Analysis record #${analysisId} not found.`);
+        }
+
+        // Format historical alert entity
+        const alertEntity = record.alert || {
+          title: "Security Incident (Historical)",
+          severity: "MEDIUM",
+          source: "Archived Telemetry",
+          timestamp: record.createdAt
+        };
+
+        // Format historical analysis response entity
+        const formattedAnalysisData = {
+          analysis: record.analysis,
+          knowledgeContext: {
+            status: record.ragStatus || "success",
+            matchesFound: record.matchesFound || (record.sources ? record.sources.length : 0),
+            sourcesUsed: record.sources || []
+          },
+          model: record.model,
+          usage: record.usage,
+          persistence: {
+            saved: true,
+            analysisId: record.analysisId
+          }
+        };
+
+        setHistoricalAlert(alertEntity);
+        setAnalysisData(formattedAnalysisData);
+      } catch (err) {
+        if (!isMounted) return;
+        setError({
+          message: err.message || `Failed to retrieve historical analysis #${analysisId}.`,
+          isNotFound: err.status === 404 || err.isNotFound
+        });
+      } finally {
+        if (isMounted) {
+          setIsLoadingHistorical(false);
+        }
+      }
+    };
+
+    fetchHistoricalAnalysis();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isHistoricalMode, analysisId]);
+
+  // 2. Live Mode: Redirect if live alert not found
+  useEffect(() => {
+    if (!isHistoricalMode && !liveAlert) {
       navigate("/alerts");
     }
-  }, [alert, navigate]);
+  }, [isHistoricalMode, liveAlert, navigate]);
 
-  if (!alert) return null;
+  // Active Alert Entity
+  const currentAlert = isHistoricalMode ? historicalAlert : liveAlert;
 
-  // Retrieve analysis details mapping
-  const analysis = mockAnalyses[alert.id] || {
-    alertId: alert.id,
-    summary: "No cached recommendation. Run vector index lookup.",
-    recommendedMitigations: [],
-    confidence: "Low",
-    retrievedSources: [],
-    lowConfidence: true
-  };
+  // Live Analysis Action Trigger
+  const handleStartAnalysis = async () => {
+    if (isHistoricalMode || !currentAlert) return;
 
-  const handleStartAnalysis = () => {
-    setIsAnalyzing(true);
-  };
+    try {
+      setIsAnalyzing(true);
+      setError(null);
 
-  const handleAnalysisFinished = () => {
-    setIsAnalyzing(false);
-    setAnalysisComplete(true);
-    
-    // Update alert status to In Progress when analyzed
-    updateAlertStatus(alert.id, "In Progress");
+      const payload = mapAlertToBackendPayload(currentAlert, { enableRag: true });
+      const result = await alertService.analyzeAlert(payload);
 
-    // Add entry to history state
-    const historyEntry = {
-      id: `HIST-${Date.now()}`,
-      alertId: alert.id,
-      alertTitle: alert.title,
-      severity: alert.severity,
-      status: analysis.lowConfidence ? "Low confidence" : "Completed",
-      sourcesRetrieved: analysis.lowConfidence 
-        ? "0 sources" 
-        : `${analysis.retrievedSources.length} sources`,
-      confidence: analysis.lowConfidence ? "Low confidence" : `${analysis.confidence} confidence`,
-      analyzedAt: new Date().toLocaleString("en-US", {
-        month: "short",
-        day: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true
-      }),
-      sessionAdded: true // Marker for UI counter
-    };
-    addHistoryEntry(historyEntry);
+      setAnalysisData(result);
+
+      // Update alert status in parent state
+      if (updateAlertStatus) {
+        updateAlertStatus(currentAlert.id, "In Progress");
+      }
+
+      // Add audit entry if helper provided
+      if (addHistoryEntry && result.analysis) {
+        const historyEntry = {
+          id: `HIST-${result.persistence?.analysisId || Date.now()}`,
+          alertId: currentAlert.id,
+          alertTitle: currentAlert.title,
+          severity: currentAlert.severity,
+          status: result.knowledgeContext?.status === "success" ? "Completed" : "Heuristic Analysis",
+          sourcesRetrieved: `${result.knowledgeContext?.matchesFound || 0} sources`,
+          confidence: `${result.analysis?.riskAssessment?.level || "Medium"} Risk`,
+          analyzedAt: new Date().toLocaleString("en-US", {
+            month: "short",
+            day: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true
+          }),
+          sessionAdded: true
+        };
+        addHistoryEntry(historyEntry);
+      }
+    } catch (err) {
+      setError({
+        message: err.message || "Failed to analyze security alert.",
+        isRateLimit: err.isRateLimit || false,
+        isNetworkError: err.isNetworkError || false
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleOpenSourceModal = (sourceDoc) => {
@@ -86,10 +168,66 @@ export default function AlertAnalysis({ alerts, updateAlertStatus, addHistoryEnt
     setSelectedSource(null);
   };
 
+  // Loading Historical Record State
+  if (isHistoricalMode && isLoadingHistorical) {
+    return (
+      <div className="py-24 text-center glass-panel rounded-2xl flex flex-col items-center justify-center space-y-3">
+        <Loader2 size={32} className="animate-spin text-rose-500" />
+        <span className="font-mono text-xs text-slate-400">Loading historical audit record #{analysisId} from database...</span>
+      </div>
+    );
+  }
+
+  // Error State for Historical Record Not Found
+  if (isHistoricalMode && error) {
+    return (
+      <div className="glass-panel p-8 rounded-2xl border border-rose-500/30 text-center max-w-lg mx-auto space-y-4 my-12">
+        <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center mx-auto">
+          <AlertTriangle size={24} />
+        </div>
+        <h3 className="text-base font-bold text-slate-100">
+          Analysis Record Not Found
+        </h3>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          {error.message}
+        </p>
+        <button
+          onClick={() => navigate("/history")}
+          className="px-4 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 mx-auto cursor-pointer"
+        >
+          <ArrowLeft size={14} />
+          Back to Analysis History
+        </button>
+      </div>
+    );
+  }
+
+  if (!currentAlert) return null;
+
+  const isAnalysisComplete = Boolean(analysisData && analysisData.analysis);
+
   return (
     <div className="space-y-6">
+      {/* Historical Audit Banner */}
+      {isHistoricalMode && (
+        <div className="p-3 bg-slate-900/80 border border-amber-500/30 rounded-xl flex items-center justify-between gap-3 text-xs text-amber-300">
+          <div className="flex items-center gap-2">
+            <Archive size={16} className="text-amber-400 shrink-0" />
+            <span>
+              <strong>Historical Audit Record #{analysisId}:</strong> Viewing read-only persisted analysis snapshot from database.
+            </span>
+          </div>
+          <button
+            onClick={() => navigate("/history")}
+            className="text-[11px] text-amber-400 hover:text-amber-200 underline cursor-pointer shrink-0"
+          >
+            All History
+          </button>
+        </div>
+      )}
+
       {/* Alert Metadata Panel */}
-      <AlertDetails alert={alert} />
+      <AlertDetails alert={currentAlert} isHistorical={isHistoricalMode} />
 
       {/* Two Column Workspace Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 align-top">
@@ -98,8 +236,8 @@ export default function AlertAnalysis({ alerts, updateAlertStatus, addHistoryEnt
         <div className="lg:col-span-2 space-y-6">
           
           {/* Work area panels */}
-          {!analysisComplete && !isAnalyzing ? (
-            /* Unanalyzed Action View */
+          {!isAnalysisComplete && !isAnalyzing ? (
+            /* Unanalyzed Action View (Live mode only) */
             <div className="glass-panel p-8 rounded-xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[380px] space-y-6">
               <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 relative">
                 <Terminal size={28} />
@@ -111,9 +249,26 @@ export default function AlertAnalysis({ alerts, updateAlertStatus, addHistoryEnt
                   Mitigation Guidance Pending
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mx-auto">
-                  AlertIQ has received the threat telemetry, but has not yet retrieved corresponding organization runbooks. Run the AI RAG compiler to search matching files.
+                  AlertIQ has received the threat telemetry, but has not yet retrieved corresponding organization runbooks. Run the AI RAG compiler to query matching playbooks and compile grounded mitigation.
                 </p>
               </div>
+
+              {error && (
+                <div className="max-w-md w-full p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl text-left space-y-2">
+                  <div className="flex items-center gap-2 text-rose-400 font-bold text-xs">
+                    <AlertTriangle size={15} />
+                    <span>{error.isRateLimit ? "AI Provider Rate Limit" : "Analysis Execution Error"}</span>
+                  </div>
+                  <p className="text-xs text-rose-300 leading-relaxed">
+                    {error.message}
+                  </p>
+                  {error.isRateLimit && (
+                    <p className="text-[11px] text-slate-400">
+                      The AI model provider is experiencing high traffic or quota constraints. Please wait a few moments before retrying.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={handleStartAnalysis}
@@ -124,37 +279,30 @@ export default function AlertAnalysis({ alerts, updateAlertStatus, addHistoryEnt
               </button>
             </div>
           ) : isAnalyzing ? (
-            /* Loading State Animation */
-            <AnalysisLoader onComplete={handleAnalysisFinished} />
+            /* Live Real-Time Analysis Loader */
+            <AnalysisLoader />
           ) : (
             /* Analysis Completed Views */
             <div className="glass-panel p-6 rounded-xl border border-slate-800 space-y-6">
-              {analysis.lowConfidence ? (
-                /* Low Confidence State refusal output */
-                <LowConfidenceState />
-              ) : (
-                /* Normal Mitigation Results output */
-                <MitigationResult result={analysis} />
-              )}
+              <MitigationResult result={analysisData} />
             </div>
           )}
 
-          {/* Interactive Chat Dialogue - Display only when analysis has been processed and is NOT low confidence */}
-          {analysisComplete && !isAnalyzing && !analysis.lowConfidence && (
+          {/* Interactive Chat Dialogue */}
+          {isAnalysisComplete && !isAnalyzing && (
             <FollowUpChat 
-              alertId={alert.id}
-              followUpResponses={analysis.followUpResponses}
-              retrievedSources={analysis.retrievedSources}
+              alert={currentAlert}
+              onViewSource={handleOpenSourceModal}
             />
           )}
         </div>
 
         {/* Right Column - Source citations list */}
         <div className="space-y-6">
-          {analysisComplete && !isAnalyzing && !analysis.lowConfidence ? (
-            /* Sources List panel */
+          {isAnalysisComplete && !isAnalyzing ? (
+            /* Real Sources List panel */
             <SourceEvidence 
-              sourceIds={analysis.retrievedSources} 
+              knowledgeContext={analysisData.knowledgeContext} 
               onViewSource={handleOpenSourceModal} 
             />
           ) : (
