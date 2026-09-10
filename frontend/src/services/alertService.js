@@ -66,8 +66,37 @@ export const analyzeAlert = async (payload) => {
   return apiClient.post("/api/alerts/analyze", payload);
 };
 
+/**
+ * Executes conversational follow-up chat for an active alert.
+ * Endpoint: POST /api/alerts/chat
+ *
+ * @param {Object} payload
+ * @param {Object} payload.alert - Normalized structured alert object (required)
+ * @param {string} payload.prompt - User follow-up question (required)
+ * @param {Array<{role: string, content: string}>} [payload.messages] - Prior conversation messages
+ * @param {boolean} [payload.enableRag=true] - Optional flag to enable/disable RAG retrieval
+ * @param {number} [payload.topK] - Optional number of RAG chunks to retrieve
+ * @param {number} [payload.similarityThreshold] - Optional similarity cutoff
+ * @returns {Promise<{
+ *   success: boolean,
+ *   response: string,
+ *   isOutOfScope: boolean,
+ *   citations: Array<{ documentId: string, title: string, source: string, category: string, similarity: number }>,
+ *   knowledgeContext: Object,
+ *   conversation: Object,
+ *   model: string,
+ *   usage: Object,
+ *   estimatedCost: Object
+ * }>}
+ */
+export const chatWithAlert = async (payload) => {
+  return apiClient.post("/api/alerts/chat", payload);
+};
+
 export const alertService = {
-  analyzeAlert
+  analyzeAlert,
+  chatWithAlert
 };
 
 export default alertService;
+
