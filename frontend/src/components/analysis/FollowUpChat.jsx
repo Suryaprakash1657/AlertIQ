@@ -1,17 +1,18 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Sparkles, User, Terminal, Database, Loader2 } from "lucide-react";
-import { mockDocuments } from "../../data/mockDocuments";
+import { Send, Sparkles, User, Terminal, Database, Loader2, AlertTriangle } from "lucide-react";
+import { alertService } from "../../services/alertService.js";
+import { mapAlertToBackendPayload } from "../../utils/alertMapper.js";
 
-export default function FollowUpChat({ alertId, followUpResponses, retrievedSources }) {
+export default function FollowUpChat({ alert, onViewSource }) {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
 
   const chips = [
-    "Why was this source selected?",
-    "Show more context",
-    "What evidence supports this recommendation?"
+    "What specific evidence supports this containment action?",
+    "Are there alternative hotfixes or mitigation steps?",
+    "What are the immediate indicators of compromise to monitor?"
   ];
 
   const scrollToBottom = () => {
@@ -22,45 +23,68 @@ export default function FollowUpChat({ alertId, followUpResponses, retrievedSour
     scrollToBottom();
   }, [messages, isTyping]);
 
-  const handleSendMessage = (text) => {
-    if (!text.trim() || isTyping) return;
+  const handleSendMessage = async (text) => {
+    if (!text.trim() || isTyping || !alert) return;
 
-    // 1. Add User Message
+    const userText = text.trim();
     const userMsg = {
-      id: Date.now(),
+      id: `user-${Date.now()}`,
       sender: "user",
-      text: text
+      text: userText
     };
-    setMessages((prev) => [...prev, userMsg]);
+
+    // Append user message immediately
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
     setInputValue("");
     setIsTyping(true);
 
-    // 2. Simulate AI response
-    setTimeout(() => {
-      // Find matches in pre-canned responses
-      let replyText = "";
-      if (followUpResponses && followUpResponses[text]) {
-        replyText = followUpResponses[text];
-      } else {
-        // Build general smart response
-        replyText = `Regarding your query "${text}": The index contains documents recommending immediate host isolation. In secondary runbooks, credential revocation is recommended to mitigate active credentials misuse before host reactivation.`;
+    try {
+      // Build conversation history messages format for backend
+      const historyMessages = updatedMessages.slice(0, -1).map((m) => ({
+        role: m.sender === "user" ? "user" : "assistant",
+        content: m.text
+      }));
+
+      const payload = mapAlertToBackendPayload(alert, {
+        prompt: userText,
+        messages: historyMessages,
+        enableRag: true
+      });
+
+      const res = await alertService.analyzeAlert(payload);
+
+      let replyText = res.analysis?.summary || "Investigation guidance compiled.";
+      if (res.analysis?.recommendedActions && res.analysis.recommendedActions.length > 0) {
+        replyText += `\n\nKey Recommended Actions:\n${res.analysis.recommendedActions.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
       }
 
-      // Attach relevant citations
-      const citations = retrievedSources && retrievedSources.length > 0 
-        ? retrievedSources.slice(0, 2).map(id => mockDocuments.find(d => d.id === id)).filter(Boolean)
+      const citations = Array.isArray(res.knowledgeContext?.sourcesUsed)
+        ? res.knowledgeContext.sourcesUsed
         : [];
 
       const aiMsg = {
-        id: Date.now() + 1,
+        id: `ai-${Date.now()}`,
         sender: "assistant",
         text: replyText,
-        citations: citations
+        citations,
+        riskLevel: res.analysis?.riskAssessment?.level
       };
 
       setMessages((prev) => [...prev, aiMsg]);
+    } catch (err) {
+      const errorMsg = {
+        id: `err-${Date.now()}`,
+        sender: "assistant",
+        isError: true,
+        text: err.isRateLimit
+          ? "AI Provider rate limit reached. Please wait a moment before sending additional queries."
+          : `Failed to compile follow-up response: ${err.message || "Request error"}`
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
       setIsTyping(false);
-    }, 1400);
+    }
   };
 
   return (
@@ -74,7 +98,7 @@ export default function FollowUpChat({ alertId, followUpResponses, retrievedSour
           </h3>
         </div>
         <span className="text-[9px] text-slate-500 font-mono">
-          RAG Chat Context Locked
+          RAG Context Active
         </span>
       </div>
 
@@ -84,7 +108,7 @@ export default function FollowUpChat({ alertId, followUpResponses, retrievedSour
           <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2">
             <span className="text-slate-500 text-xs">No active dialogue yet.</span>
             <p className="text-[10px] text-slate-600 max-w-xs leading-relaxed">
-              Ask questions to explore matches in incident databases.
+              Ask follow-up questions to investigate root causes or explore alternative runbook mitigations.
             </p>
           </div>
         ) : (
@@ -99,16 +123,20 @@ export default function FollowUpChat({ alertId, followUpResponses, retrievedSour
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 border ${
                 m.sender === "user" 
                   ? "bg-slate-850 border-slate-750 text-slate-300"
+                  : m.isError
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
                   : "bg-rose-500/10 border-rose-500/20 text-rose-500"
               }`}>
                 {m.sender === "user" ? <User size={14} /> : <Terminal size={14} />}
               </div>
 
               {/* Chat Message Bubble */}
-              <div className="max-w-[75%] space-y-2">
-                <div className={`p-3.5 rounded-xl text-xs leading-relaxed ${
+              <div className="max-w-[80%] space-y-2">
+                <div className={`p-3.5 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
                   m.sender === "user"
                     ? "bg-slate-800 text-slate-100 rounded-tr-none"
+                    : m.isError
+                    ? "bg-rose-950/30 border border-rose-500/30 text-rose-300 rounded-tl-none"
                     : "bg-slate-900 border border-slate-850 text-slate-200 rounded-tl-none"
                 }`}>
                   {m.text}
@@ -121,14 +149,15 @@ export default function FollowUpChat({ alertId, followUpResponses, retrievedSour
                       <Database size={10} />
                       Grounded Citations:
                     </span>
-                    {m.citations.map(c => (
-                      <span 
-                        key={c.id} 
-                        className="text-[9px] font-semibold text-slate-400 bg-slate-950 border border-slate-850 px-1.5 py-0.5 rounded flex items-center gap-1 hover:text-slate-200 transition cursor-pointer"
+                    {m.citations.map((c, idx) => (
+                      <button
+                        key={c.documentId || idx}
+                        onClick={() => onViewSource && onViewSource(c)}
+                        className="text-[9px] font-semibold text-slate-400 bg-slate-950 border border-slate-850 px-2 py-0.5 rounded flex items-center gap-1 hover:text-slate-200 hover:border-slate-700 transition cursor-pointer"
                         title={c.title}
                       >
-                        📄 {c.title.split(' ')[0]}... ({c.id})
-                      </span>
+                        📄 {c.title.split(' ')[0]}... ({Math.round((c.similarity || 0) * 100)}%)
+                      </button>
                     ))}
                   </div>
                 )}
@@ -143,8 +172,8 @@ export default function FollowUpChat({ alertId, followUpResponses, retrievedSour
             <div className="w-7 h-7 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 animate-pulse-subtle">
               <Loader2 size={13} className="animate-spin" />
             </div>
-            <div className="p-3 bg-slate-900 border border-slate-850 text-slate-500 rounded-xl rounded-tl-none text-xs flex items-center gap-2">
-              <span className="animate-pulse">AlertIQ is parsing security documents...</span>
+            <div className="p-3 bg-slate-900 border border-slate-850 text-slate-400 rounded-xl rounded-tl-none text-xs flex items-center gap-2">
+              <span className="animate-pulse">Consulting Gemini & threat knowledge base...</span>
             </div>
           </div>
         )}
