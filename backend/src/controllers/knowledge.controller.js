@@ -12,6 +12,94 @@ import {
   deleteKnowledgeDocument
 } from "../services/knowledge.service.js";
 import { retrieveKnowledge } from "../services/retrieval.service.js";
+import { extractTextFromDocx } from "../utils/docx.utils.js";
+
+/**
+ * Handles POST /api/knowledge/documents/upload
+ * Accepts a multipart/form-data upload containing a .docx file, extracts text via Mammoth,
+ * validates, chunks, generates embeddings, and persists document and vector chunks.
+ */
+export const uploadDocument = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded. Please attach a .docx file in the 'file' field."
+      });
+    }
+
+    const { buffer, originalname, size, mimetype } = req.file;
+
+    // 1. Extract raw normalized text from the DOCX binary buffer
+    const { text } = await extractTextFromDocx(buffer);
+
+    // 2. Prepare title and metadata
+    const rawTitle = req.body?.title ? String(req.body.title).trim() : "";
+    const cleanFileName = originalname ? originalname.replace(/\.[^/.]+$/, "").trim() : "Uploaded Runbook";
+    const documentTitle = rawTitle || cleanFileName || "Uploaded Runbook";
+
+    const category = req.body?.category || req.body?.type || "Incident Runbook";
+    const source = req.body?.source || "Uploaded Document (.docx)";
+    const description = req.body?.description || `Extracted from ${originalname}`;
+
+    let parsedMetadata = {};
+    if (req.body?.metadata) {
+      if (typeof req.body.metadata === "string") {
+        try {
+          parsedMetadata = JSON.parse(req.body.metadata);
+        } catch {
+          parsedMetadata = { rawMetadata: req.body.metadata };
+        }
+      } else if (typeof req.body.metadata === "object") {
+        parsedMetadata = req.body.metadata;
+      }
+    }
+
+    const mergedMetadata = {
+      ...parsedMetadata,
+      category,
+      type: category,
+      originalFileName: originalname,
+      fileSize: size,
+      mimeType: mimetype,
+      description
+    };
+
+    const payload = {
+      title: documentTitle,
+      content: text,
+      source,
+      metadata: mergedMetadata
+    };
+
+    // 3. Ingest into knowledge base via existing pipeline
+    const result = await createKnowledgeDocument(payload);
+
+    // 4. Return summary response (omitting bulky chunk vectors)
+    return res.status(201).json({
+      success: true,
+      message: "DOCX document extracted, chunked, and indexed successfully.",
+      document: {
+        id: result.document.id,
+        title: result.document.title,
+        source: result.document.source,
+        metadata: result.document.metadata,
+        chunkCount: result.chunkCount,
+        createdAt: result.document.createdAt,
+        updatedAt: result.document.updatedAt
+      },
+      chunkCount: result.chunkCount
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || error.status || 500;
+    const message = error.message || "Failed to process and ingest uploaded DOCX document.";
+
+    return res.status(statusCode).json({
+      success: false,
+      error: message
+    });
+  }
+};
 
 /**
  * Handles POST /api/knowledge/documents

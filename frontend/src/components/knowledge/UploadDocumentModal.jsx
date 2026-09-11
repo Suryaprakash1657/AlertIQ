@@ -1,6 +1,13 @@
 import React, { useState } from "react";
-import { X, Upload, Plus, FileText, AlertTriangle, Loader2, CheckCircle } from "lucide-react";
+import { X, Upload, Plus, FileText, AlertTriangle, Loader2, CheckCircle, FileCode } from "lucide-react";
 import { knowledgeService } from "../../services/knowledgeService.js";
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
   if (!isOpen) return null;
@@ -10,6 +17,8 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
   const [fileName, setFileName] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isDocx, setIsDocx] = useState(false);
   const [isIngesting, setIsIngesting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [ingestionPhase, setIngestionPhase] = useState("");
@@ -17,6 +26,7 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      const lowerName = (file.name || "").toLowerCase();
       setFileName(file.name);
       setErrorMessage("");
 
@@ -25,22 +35,30 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
         setTitle(file.name.replace(/\.[^/.]+$/, ""));
       }
 
-      // Read file text content
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target?.result;
-        if (typeof text === "string") {
-          setContent(text);
-          if (!description) {
-            // Provide short excerpt as initial description
-            setDescription(text.slice(0, 140).trim());
+      if (lowerName.endsWith(".docx")) {
+        // Binary DOCX flow
+        setSelectedFile(file);
+        setIsDocx(true);
+        setContent("");
+      } else {
+        // Text / Markdown / JSON FileReader flow
+        setSelectedFile(null);
+        setIsDocx(false);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const text = event.target?.result;
+          if (typeof text === "string") {
+            setContent(text);
+            if (!description) {
+              setDescription(text.slice(0, 140).trim());
+            }
           }
-        }
-      };
-      reader.onerror = () => {
-        setErrorMessage("Failed to read file. Please ensure it is a valid text, markdown, or JSON file.");
-      };
-      reader.readAsText(file);
+        };
+        reader.onerror = () => {
+          setErrorMessage("Failed to read file. Please ensure it is a valid text, markdown, or JSON file.");
+        };
+        reader.readAsText(file);
+      }
     }
   };
 
@@ -49,13 +67,47 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
     setErrorMessage("");
 
     const trimmedTitle = title.trim();
-    const finalContent = (content || description).trim();
 
     if (!trimmedTitle) {
       setErrorMessage("Document title is required.");
       return;
     }
 
+    if (isDocx && selectedFile) {
+      // Multipart FormData flow for DOCX
+      try {
+        setIsIngesting(true);
+        setIngestionPhase("Extracting text, chunking, and generating vector embeddings...");
+
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("title", trimmedTitle);
+        formData.append("category", type);
+        formData.append("type", type);
+        formData.append("source", "Uploaded Document (.docx)");
+        if (description.trim()) {
+          formData.append("description", description.trim());
+        }
+
+        const result = await knowledgeService.uploadDocument(formData);
+
+        setIngestionPhase("Indexed successfully!");
+        if (onSuccess) {
+          onSuccess(result.document);
+        }
+
+        resetForm();
+        onClose();
+      } catch (err) {
+        setIsIngesting(false);
+        setIngestionPhase("");
+        setErrorMessage(err.message || "Failed to process and ingest DOCX document.");
+      }
+      return;
+    }
+
+    // JSON payload flow for TXT, MD, JSON, and direct text input
+    const finalContent = (content || description).trim();
     if (!finalContent) {
       setErrorMessage("Document content is required. Please upload a file or type content.");
       return;
@@ -98,6 +150,8 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
     setDescription("");
     setContent("");
     setFileName("");
+    setSelectedFile(null);
+    setIsDocx(false);
     setIsIngesting(false);
     setErrorMessage("");
     setIngestionPhase("");
@@ -177,12 +231,12 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
               {/* File Select */}
               <div className="space-y-1.5">
                 <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
-                  Select File (TXT, MD, JSON)
+                  Select File (DOCX, TXT, MD, JSON)
                 </label>
                 <div className="relative border border-dashed border-slate-800 hover:border-slate-700 bg-slate-950/40 rounded-xl p-5 text-center cursor-pointer transition">
                   <input
                     type="file"
-                    accept=".pdf,.txt,.md,.json,.text"
+                    accept=".docx,.txt,.md,.json,.text"
                     onChange={handleFileChange}
                     className="absolute inset-0 opacity-0 cursor-pointer"
                   />
@@ -194,8 +248,13 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
                       {fileName ? fileName : "Drag & drop or click to browse files"}
                     </span>
                     <span className="text-[10px] text-slate-500 block">
-                      Supports .txt, .md, and .json files
+                      Supports .docx, .txt, .md, and .json files
                     </span>
+                    {isDocx && selectedFile && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-rose-500/10 border border-rose-500/30 text-[10px] font-mono text-rose-400 font-semibold">
+                        Word Document ({formatFileSize(selectedFile.size)})
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -231,30 +290,48 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
                 </select>
               </div>
 
-              {/* Content / Description */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
+              {/* Content / Description Area */}
+              {isDocx ? (
+                <div className="space-y-1.5">
                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
-                    Document Content
+                    Runbook Notes / Description (Optional)
                   </label>
-                  {content && (
-                    <span className="text-[9px] text-slate-500 font-mono">
-                      {content.length} characters loaded
-                    </span>
-                  )}
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows="3"
+                    placeholder="Add optional operational notes or context..."
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-650 focus:outline-none focus:border-slate-750 transition"
+                  />
+                  <p className="text-[10px] text-slate-500 italic">
+                    DOCX text will be extracted, chunked, and embedded automatically upon upload.
+                  </p>
                 </div>
-                <textarea
-                  value={content || description}
-                  onChange={(e) => {
-                    setContent(e.target.value);
-                    if (!description) setDescription(e.target.value.slice(0, 140));
-                  }}
-                  rows="4"
-                  placeholder="Paste runbook text, investigation steps, mitigation procedures..."
-                  className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-650 focus:outline-none focus:border-slate-750 font-mono transition"
-                  required
-                />
-              </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
+                      Document Content
+                    </label>
+                    {content && (
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        {content.length} characters loaded
+                      </span>
+                    )}
+                  </div>
+                  <textarea
+                    value={content || description}
+                    onChange={(e) => {
+                      setContent(e.target.value);
+                      if (!description) setDescription(e.target.value.slice(0, 140));
+                    }}
+                    rows="4"
+                    placeholder="Paste runbook text, investigation steps, mitigation procedures..."
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-650 focus:outline-none focus:border-slate-750 font-mono transition"
+                    required={!isDocx}
+                  />
+                </div>
+              )}
 
               {/* Form Actions */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-850/80">
@@ -270,7 +347,11 @@ export default function UploadDocumentModal({ isOpen, onClose, onSuccess }) {
                 </button>
                 <button
                   type="submit"
-                  disabled={!title.trim() || (!content.trim() && !description.trim())}
+                  disabled={
+                    isDocx
+                      ? !title.trim() || !selectedFile
+                      : !title.trim() || (!content.trim() && !description.trim())
+                  }
                   className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 disabled:bg-slate-850 disabled:text-slate-600 text-white rounded-lg transition-all duration-200 shadow-[0_0_12px_rgba(225,29,72,0.15)] flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus size={14} />
