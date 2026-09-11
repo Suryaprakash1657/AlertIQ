@@ -30,6 +30,22 @@ export const createDocument = async (payload) => {
 };
 
 /**
+ * Uploads and extracts a Microsoft Word (.docx) document into vector storage.
+ * Endpoint: POST /api/knowledge/documents/upload
+ *
+ * @param {FormData} formData - Multipart form containing 'file' (.docx) and optional metadata fields.
+ * @returns {Promise<{
+ *   success: boolean,
+ *   message: string,
+ *   document: Object,
+ *   chunkCount: number
+ * }>}
+ */
+export const uploadDocument = async (formData) => {
+  return apiClient.post("/api/knowledge/documents/upload", formData);
+};
+
+/**
  * Lists all indexed knowledge documents (lightweight summary).
  * Endpoint: GET /api/knowledge/documents
  *
@@ -121,6 +137,7 @@ export const searchKnowledge = async ({ query, topK, similarityThreshold }) => {
 
 export const knowledgeService = {
   createDocument,
+  uploadDocument,
   getDocuments,
   getDocumentById,
   deleteDocument,
