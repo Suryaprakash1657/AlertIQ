@@ -65,5 +65,27 @@ export const mockAlerts = [
     detectedTime: "Aug 18, 2026, 08:12 AM",
     timestamp: "2026-08-18T08:12:00Z",
     lowConfidenceTrigger: true // Indicates that AlertIQ will return low confidence/insufficient evidence state
+  },
+  {
+    id: "ALT-2026-007",
+    title: "Suspicious Remote Access Between Internal Hosts",
+    severity: "HIGH",
+    affectedAsset: "WIN-SRV-025",
+    targetHost: "WIN-SRV-025",
+    source: "Windows Security Monitor",
+    description: "Suspicious remote administrative access was detected between two internal hosts.",
+    status: "New",
+    detectedTime: "Aug 21, 2026, 09:30 AM",
+    timestamp: "2026-08-21T09:30:00Z",
+    sourceIp: "10.10.20.15",
+    destinationIp: "10.10.30.25",
+    user: "administrator",
+    evidence: [
+      "Unexpected successful administrator authentication between internal hosts.",
+      "Remote access activity was observed outside the user's normal pattern.",
+      "The source host has not previously been associated with this administrative activity.",
+      "Investigate whether the activity is consistent with lateral movement."
+    ]
   }
 ];
+

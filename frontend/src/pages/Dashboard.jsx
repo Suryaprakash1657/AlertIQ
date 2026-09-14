@@ -29,11 +29,18 @@ export default function Dashboard({ alerts = [] }) {
   const [isHealthOnline, setIsHealthOnline] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Compute active queue metrics from incoming SIEM alerts
-  const activeAlertsCount = alerts.filter(a => a.status !== "Resolved").length;
-  const criticalHighCount = alerts.filter(
-    a => (a.severity === "CRITICAL" || a.severity === "HIGH") && a.status !== "Resolved"
-  ).length;
+  // Compute active queue metrics dynamically from incoming SIEM alerts
+  const activeAlertsCount = Array.isArray(alerts)
+    ? alerts.filter(a => a?.status?.toLowerCase() !== "resolved").length
+    : 0;
+
+  const criticalHighCount = Array.isArray(alerts)
+    ? alerts.filter(a => {
+        const severity = a?.severity?.toUpperCase();
+        const isNotResolved = a?.status?.toLowerCase() !== "resolved";
+        return (severity === "CRITICAL" || severity === "HIGH") && isNotResolved;
+      }).length
+    : 0;
 
   const fetchDashboardData = async () => {
     try {
@@ -44,14 +51,16 @@ export default function Dashboard({ alerts = [] }) {
         healthService.checkHealth()
       ]);
 
-      if (docsRes.status === "fulfilled" && docsRes.value?.data) {
-        setDocsCount(docsRes.value.data.length);
+      if (docsRes.status === "fulfilled" && docsRes.value) {
+        const total = docsRes.value.total ?? (docsRes.value.documents?.length ?? (docsRes.value.data?.length ?? 0));
+        setDocsCount(total);
       } else {
         setDocsCount(0);
       }
 
       if (historyRes.status === "fulfilled" && historyRes.value) {
-        setHistoryTotal(historyRes.value.pagination?.total ?? (historyRes.value.data?.length || 0));
+        const total = historyRes.value.pagination?.total ?? (historyRes.value.data?.length || 0);
+        setHistoryTotal(total);
         setRecentHistory(historyRes.value.data || []);
       } else {
         setHistoryTotal(0);
@@ -137,7 +146,8 @@ export default function Dashboard({ alerts = [] }) {
         />
         <StatCard
           title="Persisted Analyses"
-          value={isLoading && historyTotal === null ? "..." : (historyTotal ?? 0)}
+          value={historyTotal}
+          isLoading={isLoading && historyTotal === null}
           subtext="Audited AI mitigations in DB"
           icon={Activity}
           colorClass="text-emerald-500"
@@ -145,7 +155,8 @@ export default function Dashboard({ alerts = [] }) {
         />
         <StatCard
           title="Knowledge Documents"
-          value={isLoading && docsCount === null ? "..." : (docsCount ?? 0)}
+          value={docsCount}
+          isLoading={isLoading && docsCount === null}
           subtext="Indexed incident playbooks"
           icon={FileText}
           colorClass="text-cyan-500"
