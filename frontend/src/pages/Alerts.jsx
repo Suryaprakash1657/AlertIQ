@@ -1,13 +1,17 @@
 import React, { useState } from "react";
 import AlertFilters from "../components/alerts/AlertFilters";
 import AlertTable from "../components/alerts/AlertTable";
-import { ShieldAlert, Info } from "lucide-react";
+import AddAlertModal from "../components/alerts/AddAlertModal";
+import Toast from "../components/common/Toast";
+import { Info, Plus } from "lucide-react";
 
-export default function Alerts({ alerts }) {
+export default function Alerts({ alerts = [], onAddAlert }) {
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState("");
   const [status, setStatus] = useState("");
   const [source, setSource] = useState("");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const handleReset = () => {
     setSearch("");
@@ -16,13 +20,33 @@ export default function Alerts({ alerts }) {
     setSource("");
   };
 
+  const handleCreateAlert = (newAlert) => {
+    if (onAddAlert) {
+      onAddAlert(newAlert);
+    }
+    setToast({
+      message: `Test alert ${newAlert.id} created successfully and added to queue.`,
+      type: "success"
+    });
+  };
+
+  // Derive unique available sources from current alerts
+  const availableSources = Array.from(
+    new Set(alerts.map((a) => a.source).filter(Boolean))
+  );
+
   // Filter alerts based on criteria
   const filteredAlerts = alerts.filter((alert) => {
+    const q = search.toLowerCase();
     const matchesSearch = 
-      alert.title.toLowerCase().includes(search.toLowerCase()) ||
-      alert.description.toLowerCase().includes(search.toLowerCase()) ||
-      alert.affectedAsset.toLowerCase().includes(search.toLowerCase()) ||
-      alert.id.toLowerCase().includes(search.toLowerCase());
+      (alert.title || "").toLowerCase().includes(q) ||
+      (alert.description || "").toLowerCase().includes(q) ||
+      (alert.affectedAsset || "").toLowerCase().includes(q) ||
+      (alert.targetHost || "").toLowerCase().includes(q) ||
+      (alert.id || "").toLowerCase().includes(q) ||
+      (alert.sourceIp || "").toLowerCase().includes(q) ||
+      (alert.destinationIp || "").toLowerCase().includes(q) ||
+      (alert.user || "").toLowerCase().includes(q);
 
     const matchesSeverity = severity ? alert.severity === severity : true;
     const matchesStatus = status ? alert.status === status : true;
@@ -43,9 +67,27 @@ export default function Alerts({ alerts }) {
             Security alerts available for investigation and mitigation analysis.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse-subtle" />
-          <span>Queue Status: <strong className="text-slate-200 font-bold">{filteredAlerts.length} Unresolved</strong></span>
+        
+        <div className="flex items-center gap-4 self-start md:self-auto">
+          {/* Queue Status Counter */}
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse-subtle" />
+            <span>Queue Status: <strong className="text-slate-200 font-bold">{filteredAlerts.length} Unresolved</strong></span>
+          </div>
+
+          {/* Add Alert Action with subtle demo note */}
+          <div className="flex flex-col items-end">
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-3 py-1.5 text-xs font-semibold text-slate-200 bg-slate-900 hover:bg-slate-850 hover:text-white border border-slate-750 hover:border-slate-600 rounded-lg flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+            >
+              <Plus size={13} className="text-rose-500" />
+              <span>Add Alert</span>
+            </button>
+            <span className="text-[10px] text-slate-500 mt-0.5 font-mono">
+              For testing / demo alerts
+            </span>
+          </div>
         </div>
       </div>
 
@@ -67,11 +109,29 @@ export default function Alerts({ alerts }) {
         setStatus={setStatus}
         source={source}
         setSource={setSource}
+        availableSources={availableSources}
         onReset={handleReset}
       />
 
       {/* Main List Table */}
       <AlertTable alerts={filteredAlerts} />
+
+      {/* Add Alert Modal */}
+      <AddAlertModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onAddAlert={handleCreateAlert}
+      />
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }
+
