@@ -25,6 +25,11 @@ export default function App() {
     );
   };
 
+  // Action to add a manual/test alert to the in-memory queue
+  const handleAddAlert = (newAlert) => {
+    setAlerts((prev) => [newAlert, ...prev]);
+  };
+
   return (
     <BrowserRouter>
       <div className="flex min-h-screen bg-slate-950 text-slate-100 font-sans scanline">
@@ -49,7 +54,7 @@ export default function App() {
               />
               <Route 
                 path="/alerts" 
-                element={<Alerts alerts={alerts} />} 
+                element={<Alerts alerts={alerts} onAddAlert={handleAddAlert} />} 
               />
               <Route 
                 path="/analysis/history/:analysisId" 

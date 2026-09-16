@@ -10,11 +10,12 @@ export default function AlertFilters({
   setStatus,
   source,
   setSource,
-  onReset
+  onReset,
+  availableSources = []
 }) {
   const severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
   const statuses = ["New", "In Progress", "Resolved"];
-  const sources = [
+  const defaultSources = [
     "Endpoint Detection System",
     "Security Monitoring Platform",
     "Identity Monitoring System",
@@ -22,6 +23,7 @@ export default function AlertFilters({
     "Network Traffic Monitor",
     "Threat Intelligence Hub"
   ];
+  const sources = Array.from(new Set([...defaultSources, ...(Array.isArray(availableSources) ? availableSources : [])])).filter(Boolean);
 
   return (
     <div className="glass-panel p-5 rounded-xl space-y-4">
